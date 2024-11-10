@@ -14,29 +14,32 @@ if uploaded_file is not None:
     st.dataframe(data)
 
     # Step 2: Let the user select the main column to use (e.g., company names)
-    main_column = st.selectbox("Select the main column", data.columns)
-    st.write(f"Main column selected: {main_column}")
-    
-    # Step 3: Enter a query or prompt
-    prompt = st.text_input("Enter your query (e.g., Get email address for {company})")
+    if not data.empty:
+        main_column = st.selectbox("Select the main column", data.columns)
+        st.write(f"Main column selected: {main_column}")
 
-    # Display the final prompt for review
-    if prompt:
-        st.write(f"Your custom query: {prompt}")
+        # Step 3: Enter a query or prompt
+        prompt = st.text_input("Enter your query (e.g., Get email address for {company})")
 
-    # Step 4: Run search when the button is clicked
-    if st.button("Run Search"):
-        st.write("Running search...")
+        # Display the final prompt for review
+        if prompt:
+            st.write(f"Your custom query: {prompt}")
 
-        # Perform search using the defined function
-        results = perform_search(data, main_column, prompt)
-        st.write("Search Results:")
-        st.write(results)
+        # Step 4: Run search when the button is clicked and all variables are defined
+        if st.button("Run Search") and main_column and prompt:
+            st.write("Running search...")
 
-        # Extract information from the results
-        extracted_data = extract_information(results, prompt)
-        st.write("Extracted Information:")
-        st.write(extracted_data)
+            # Perform search using the defined function
+            results = perform_search(data, main_column, prompt)
+            st.write("Search Results:")
+            st.write(results)
+
+            # Extract information from the results
+            extracted_data = extract_information(results, prompt)
+            st.write("Extracted Information:")
+            st.write(extracted_data)
+    else:
+        st.write("The uploaded file is empty. Please upload a valid CSV file.")
 
 # Define the search function (placeholder implementation)
 def perform_search(data, main_column, prompt):
