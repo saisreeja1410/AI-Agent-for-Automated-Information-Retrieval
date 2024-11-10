@@ -45,18 +45,31 @@ if uploaded_file is not None:
 def perform_search(data, main_column, prompt):
     # Example prompt: "Get City for Index 1"
     try:
-        # Parse the entity from the prompt (assuming format "Get <column> for <entity>")
+        # Parse the target column and entity value from the prompt
         query_parts = prompt.split(" ")
-        target_column = query_parts[1]
+        target_column = query_parts[1]  # Assuming prompt is "Get <Column> for <Entity>"
         entity_value = query_parts[-1]
 
-        # Find and return the row that matches the entity value in the main column
-        result_row = data[data[main_column] == int(entity_value)]  # Adjust as needed
+        # Check if the target column exists in the data
+        if target_column not in data.columns:
+            return f"Column '{target_column}' does not exist in the data."
+
+        # Attempt to convert entity_value to the correct type
+        try:
+            entity_value = int(entity_value)  # Convert to int if main_column is numeric
+        except ValueError:
+            pass  # Keep as a string if conversion fails
+
+        # Find the row that matches the entity in the main column
+        result_row = data[data[main_column] == entity_value]
+        
         if not result_row.empty:
+            # Retrieve the value in the target column for the matched row
             result_value = result_row[target_column].values[0]
-            return f"Result: {target_column} for {main_column} {entity_value} is {result_value}"
+            return f"Result: {target_column} for {main_column} '{entity_value}' is '{result_value}'"
         else:
-            return "No matching data found for your query."
+            return f"No matching data found for '{main_column} = {entity_value}' in the dataset."
+    
     except Exception as e:
         return f"Error processing query: {e}"
 
