@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 
@@ -18,33 +17,36 @@ if uploaded_file is not None:
     main_column = st.selectbox("Select the main column", data.columns)
     st.write(f"Main column selected: {main_column}")
     
-if uploaded_file and main_column:
+    # Step 3: Enter a query or prompt
     prompt = st.text_input("Enter your query (e.g., Get email address for {company})")
 
     # Display the final prompt for review
     if prompt:
         st.write(f"Your custom query: {prompt}")
 
-
-if uploaded_file and main_column and prompt:
+    # Step 4: Run search when the button is clicked
     if st.button("Run Search"):
         st.write("Running search...")
 
-        # Placeholder for search functionality
-        # Here, you would call the API to perform the search based on `prompt` and `main_column`
-        # For example:
-        # results = perform_search(data, main_column, prompt)
-        # st.write(results)
+        # Perform search using the defined function
+        results = perform_search(data, main_column, prompt)
+        st.write("Search Results:")
+        st.write(results)
 
-        st.write("Search completed!")
+        # Extract information from the results
+        extracted_data = extract_information(results, prompt)
+        st.write("Extracted Information:")
+        st.write(extracted_data)
+
+# Define the search function (placeholder implementation)
 def perform_search(data, main_column, prompt):
     # This is where you would integrate SerpAPI or ScraperAPI
     # Simulated response
     results = {entity: f"Mock result for {entity}" for entity in data[main_column]}
     return results
 
+# Define the information extraction function (placeholder implementation)
 def extract_information(results, prompt):
     # This is where you would send data to the LLM API for parsing
     extracted_data = {entity: f"Extracted info for {entity}" for entity in results}
     return extracted_data
-
