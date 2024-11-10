@@ -43,10 +43,23 @@ if uploaded_file is not None:
 
 # Define the search function (placeholder implementation)
 def perform_search(data, main_column, prompt):
-    # This is where you would integrate SerpAPI or ScraperAPI
-    # Simulated response
-    results = {entity: f"Mock result for {entity}" for entity in data[main_column]}
-    return results
+    # Example prompt: "Get City for Index 1"
+    try:
+        # Parse the entity from the prompt (assuming format "Get <column> for <entity>")
+        query_parts = prompt.split(" ")
+        target_column = query_parts[1]
+        entity_value = query_parts[-1]
+
+        # Find and return the row that matches the entity value in the main column
+        result_row = data[data[main_column] == int(entity_value)]  # Adjust as needed
+        if not result_row.empty:
+            result_value = result_row[target_column].values[0]
+            return f"Result: {target_column} for {main_column} {entity_value} is {result_value}"
+        else:
+            return "No matching data found for your query."
+    except Exception as e:
+        return f"Error processing query: {e}"
+
 
 # Define the information extraction function (placeholder implementation)
 def extract_information(results, prompt):
