@@ -3,20 +3,33 @@ import pandas as pd
 import requests
 import openai
 # Define the function for searching with SerpAPI
+import requests
+
 def perform_search(data, main_column, prompt, api_key):
     results = {}
     for entity in data[main_column]:
-        # Replace placeholder in the prompt
-        search_query = prompt.replace("{company}", entity)
-        url = f"https://serpapi.com/search.json?q={search_query}&api_key={api_key}"
-        response = requests.get(url)
+        # Customize the search query by replacing {company} in the prompt with the actual entity
+        search_query = prompt.replace("{company}", str(entity))
         
+        # Define the SerpAPI search endpoint with your query and API key
+        url = "https://serpapi.com/search"
+        params = {
+            "q": search_query,
+            "api_key": api_key,
+            "engine": "google"
+        }
+
+        # Make the request to SerpAPI
+        response = requests.get(url, params=params)
+        
+        # Check if the response is successful
         if response.status_code == 200:
-            # Extract search results
-            results[entity] = response.json().get("organic_results", [])
+            # Extract relevant search results
+            search_data = response.json().get("organic_results", [])
+            results[entity] = search_data if search_data else "No results found."
         else:
             results[entity] = f"Error: {response.status_code}"
-    
+
     return results
 
 # Define the function for extracting information using OpenAI GPT
