@@ -5,11 +5,11 @@ import openai
 import time
 
 # Load data with caching
-@st.cache_data
+#@st.cache_data
 def load_data(uploaded_file):
     return pd.read_csv(uploaded_file)
 
-@st.cache_data
+#@st.cache_data
 def perform_search_cached(data, main_column, prompt, api_key):
     return perform_search(data, main_column, prompt, api_key)
 
