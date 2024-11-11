@@ -8,10 +8,10 @@ import requests
 def perform_search(data, main_column, prompt, api_key):
     results = {}
     for entity in data[main_column]:
-        # Customize the search query by replacing {company} in the prompt with the actual entity
+        # Replace {company} in the prompt with each entity from the selected column
         search_query = prompt.replace("{company}", str(entity))
         
-        # Define the SerpAPI search endpoint with your query and API key
+        # SerpAPI endpoint and parameters
         url = "https://serpapi.com/search"
         params = {
             "q": search_query,
@@ -19,12 +19,11 @@ def perform_search(data, main_column, prompt, api_key):
             "engine": "google"
         }
 
-        # Make the request to SerpAPI
+        # Send request to SerpAPI
         response = requests.get(url, params=params)
         
-        # Check if the response is successful
+        # Check for a successful response and process results
         if response.status_code == 200:
-            # Extract relevant search results
             search_data = response.json().get("organic_results", [])
             results[entity] = search_data if search_data else "No results found."
         else:
