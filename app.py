@@ -5,11 +5,11 @@ import openai
 import time
 
 # Load data with caching
-@st.cache_data
+#@st.cache_data
 def load_data(uploaded_file):
     return pd.read_csv(uploaded_file)
 
-@st.cache_data
+#@st.cache_data
 def perform_search_cached(data, main_column, prompt, api_key):
     return perform_search(data, main_column, prompt, api_key)
 
@@ -18,35 +18,25 @@ def perform_search(data, main_column, prompt, api_key):
     for entity in data[main_column]:
         search_query = prompt.replace("{company}", str(entity))
         url = "https://serpapi.com/search"
-        params = {"q": search_query, "api_key": api_key, "engine": "google"}  
+        params = {"q": search_query, "api_key": api_key, "engine": "google"}
 
         try:
             response = requests.get(url, params=params)
-            response.raise_for_status()
+            response.raise_for_status()  # Check for HTTP errors
             search_data = response.json().get("organic_results", [])
-
-            # Debugging statements
-            st.write(f"Query for {entity}: {search_query}")
-            st.write(f"Response JSON for {entity}: {response.json()}")  # Check if the JSON contains what you expect
-
+            st.write(f"Results for {entity}: {search_data}")  # Display each entity's result immediately
             results[entity] = search_data if search_data else "No results found."
+
         except requests.exceptions.RequestException as e:
             results[entity] = f"Error: {e}"
-            st.write(f"Error for {entity}: {e}")
-
-        time.sleep(1)
+            st.write(f"Error for {entity}: {e}")  # Debugging output for errors
 
     return results
-    # Displaying the results in Streamlit
-if results:
-    st.write("Search Results:")
-    for entity, result in results.items():
-        st.write(f"Results for {entity}:")
-        if isinstance(result, list):
-            for res in result:
-                st.write(res)
-        else:
-            st.write(result)
+
+# Use `perform_search` directly in the app
+if st.button("Run Search"):
+    results = perform_search(data, main_column, prompt, serpapi_key)
+    st.write("Results:", results)  # Display results directly
 
 
     openai.api_key = openai_api_key
@@ -95,9 +85,16 @@ if uploaded_file is not None:
                 st.download_button("Download Results", csv, "results.csv", "text/csv", key='download-csv')
     else:
         st.write("The uploaded file is empty. Please upload a valid CSV file.")
-# Hardcoded test for a single query
-test_query = "Get email address for Microsoft"
-test_params = {"q": test_query, "api_key": api_key, "engine": "google"}
-response = requests.get(url, params=test_params)
-st.write("Test Query Response:", response.json())
+
+if st.button("Run Sample Test"):
+    url = "https://serpapi.com/search"
+    params = {
+        "q": "Get email address for Microsoft",
+        "api_key": serpapi_key,
+        "engine": "google"
+    }
+    
+    response = requests.get(url, params=params)
+    st.write("Sample Test Status Code:", response.status_code)
+    st.write("Sample Test JSON:", response.json())
 
