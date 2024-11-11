@@ -15,7 +15,7 @@ def perform_search(data, main_column, prompt, api_key):
         url = "https://serpapi.com/search"
         params = {
             "q": search_query,
-            "api_key": api_key,
+            "api_key": db18370d8c7b4624dda502828932c28290eb5791581fedfb1cd1d39f06da9fac,
             "engine": "google"
         }
 
