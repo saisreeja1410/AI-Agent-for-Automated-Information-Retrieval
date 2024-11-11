@@ -37,6 +37,17 @@ def perform_search(data, main_column, prompt, api_key):
         time.sleep(1)
 
     return results
+    # Displaying the results in Streamlit
+if results:
+    st.write("Search Results:")
+    for entity, result in results.items():
+        st.write(f"Results for {entity}:")
+        if isinstance(result, list):
+            for res in result:
+                st.write(res)
+        else:
+            st.write(result)
+
 
     openai.api_key = openai_api_key
     extracted_data = {}
@@ -84,4 +95,9 @@ if uploaded_file is not None:
                 st.download_button("Download Results", csv, "results.csv", "text/csv", key='download-csv')
     else:
         st.write("The uploaded file is empty. Please upload a valid CSV file.")
+# Hardcoded test for a single query
+test_query = "Get email address for Microsoft"
+test_params = {"q": test_query, "api_key": api_key, "engine": "google"}
+response = requests.get(url, params=test_params)
+st.write("Test Query Response:", response.json())
 
