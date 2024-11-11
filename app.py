@@ -32,6 +32,11 @@ def perform_search(data, main_column, prompt, api_key):
             results[entity] = f"Error: {response.status_code}"
 
     return results
+# Display the results in Streamlit
+if results:
+    st.write("Search Results:")
+    for entity, result in results.items():
+        st.write(f"Results for {entity}: {result}")
 
 # Define the function for extracting information using OpenAI GPT
 def extract_information(results, openai_api_key):
