@@ -18,7 +18,7 @@ def perform_search(data, main_column, prompt, api_key):
     for entity in data[main_column]:
         search_query = prompt.replace("{company}", str(entity))
         url = "https://serpapi.com/search"
-        params = {"q": search_query, "api_key": api_key, "engine": "google"}
+        params = {"q": search_query, "api_key": api_key, "engine": "google"}  # Use api_key variable here
 
         try:
             response = requests.get(url, params=params)
@@ -79,3 +79,4 @@ if uploaded_file is not None:
                 st.download_button("Download Results", csv, "results.csv", "text/csv", key='download-csv')
     else:
         st.write("The uploaded file is empty. Please upload a valid CSV file.")
+
