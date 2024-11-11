@@ -18,21 +18,26 @@ def perform_search(data, main_column, prompt, api_key):
     for entity in data[main_column]:
         search_query = prompt.replace("{company}", str(entity))
         url = "https://serpapi.com/search"
-        params = {"q": search_query, "api_key": api_key, "engine": "google"}  # Use api_key variable here
+        params = {"q": search_query, "api_key": api_key, "engine": "google"}  
 
         try:
             response = requests.get(url, params=params)
             response.raise_for_status()
             search_data = response.json().get("organic_results", [])
+
+            # Debugging statements
+            st.write(f"Query for {entity}: {search_query}")
+            st.write(f"Response JSON for {entity}: {response.json()}")  # Check if the JSON contains what you expect
+
             results[entity] = search_data if search_data else "No results found."
         except requests.exceptions.RequestException as e:
             results[entity] = f"Error: {e}"
+            st.write(f"Error for {entity}: {e}")
 
-        time.sleep(1)  # Rate limiting
+        time.sleep(1)
 
     return results
 
-def extract_information(results, openai_api_key):
     openai.api_key = openai_api_key
     extracted_data = {}
     for entity, search_results in results.items():
