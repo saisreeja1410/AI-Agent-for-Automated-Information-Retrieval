@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import requests
 import openai
-# Define the function for searching with SerpAPI
 import requests
 
 def perform_search(data, main_column, prompt, api_key):
@@ -10,21 +9,24 @@ def perform_search(data, main_column, prompt, api_key):
     for entity in data[main_column]:
         # Replace {company} in the prompt with each entity from the selected column
         search_query = prompt.replace("{company}", str(entity))
-        
+        print(f"Running search for: {search_query}")  # Debug print
+
         # SerpAPI endpoint and parameters
         url = "https://serpapi.com/search"
         params = {
             "q": search_query,
-            "api_key": db18370d8c7b4624dda502828932c28290eb5791581fedfb1cd1d39f06da9fac,
+            "api_key": api_key,
             "engine": "google"
         }
 
         # Send request to SerpAPI
         response = requests.get(url, params=params)
-        
+        print(f"Response Status Code: {response.status_code}")  # Debug print
+
         # Check for a successful response and process results
         if response.status_code == 200:
             search_data = response.json().get("organic_results", [])
+            print(f"Search results for {entity}: {search_data}")  # Debug print
             results[entity] = search_data if search_data else "No results found."
         else:
             results[entity] = f"Error: {response.status_code}"
