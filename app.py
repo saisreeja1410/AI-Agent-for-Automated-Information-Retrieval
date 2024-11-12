@@ -19,21 +19,26 @@ def perform_search(data, main_column, prompt, api_key):
 
     return results
 
+
 def extract_information(results, openai_api_key):
     openai.api_key = openai_api_key
     extracted_data = {}
+
     for entity, search_results in results.items():
+        # Format the prompt for information extraction
         prompt_text = f"Extract relevant information about {entity} from the following: {search_results}"
+        
         try:
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-3.5-turbo",  # Use gpt-3.5-turbo or similar model
                 messages=[
-                    {"role": "system", "content": "You are an information extraction assistant."},
                     {"role": "user", "content": prompt_text}
                 ],
-                max_tokens=100
+                max_tokens=100,
+                temperature=0.5
             )
             extracted_data[entity] = response['choices'][0]['message']['content'].strip()
+        
         except Exception as e:
             extracted_data[entity] = f"Error: {str(e)}"
 
