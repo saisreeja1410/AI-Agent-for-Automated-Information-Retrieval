@@ -27,20 +27,23 @@ def load_google_sheet(spreadsheet_id, range_name):
         return df
 
 # Perform a search using ScraperAPI
-def perform_search(data, main_column, prompt, api_key):
+def perform_search(entities, prompt, api_key):
     results = {}
-    for entity in data[main_column]:
+    for entity in entities:
         search_query = prompt.replace("{company}", str(entity))
-        url = f"http://api.scraperapi.com"
+        url = "http://api.scraperapi.com"
         params = {
             "api_key": api_key,
             "url": f"https://www.google.com/search?q={search_query}"
         }
         response = requests.get(url, params=params)
-        
+
         if response.status_code == 200:
-            # Simplified mockup of scraping logic
-            results[entity] = f"Mock search results for {search_query}"  # Replace with real scraping
+            try:
+                # Parse and use meaningful parts of the response
+                results[entity] = response.text[:200]  # Return the first 200 characters as a mock result
+            except Exception as e:
+                results[entity] = f"Error processing response: {str(e)}"
         else:
             results[entity] = f"Error: {response.status_code}"
     return results
@@ -60,10 +63,15 @@ def extract_information(results, groq_api_key):
             if response.status_code == 200:
                 extracted_data[entity] = response.json().get("result", "No information extracted.")
             else:
-                extracted_data[entity] = f"Error: {response.status_code}"
+                extracted_data[entity] = f"Groq API error {response.status_code}: {response.text}"
         except Exception as e:
             extracted_data[entity] = f"Error: {str(e)}"
     return extracted_data
+
+# Split data into batches
+def batch_data(data, batch_size):
+    for i in range(0, len(data), batch_size):
+        yield data[i:i + batch_size]
 
 # Streamlit app setup
 st.title("AI Agent for Automated Information Retrieval")
@@ -99,27 +107,37 @@ if not data.empty:
     # Run the search and extract information
     if st.button("Run Search") and main_column and prompt and scraperapi_key and groq_api_key:
         st.write("Running search...")
+        progress_bar = st.progress(0)
 
-        # Perform the search
-        results = perform_search(data, main_column, prompt, scraperapi_key)
+        # Initialize results storage
+        final_results = {}
+        extracted_information = {}
+
+        # Process in batches
+        entities = data[main_column].tolist()
+        total_batches = len(entities)
+        for idx, batch in enumerate(batch_data(entities, batch_size=10)):
+            # Perform the search
+            batch_results = perform_search(batch, prompt, scraperapi_key)
+            final_results.update(batch_results)
+
+            # Extract information
+            batch_extracted = extract_information(batch_results, groq_api_key)
+            extracted_information.update(batch_extracted)
+
+            # Update progress
+            progress_bar.progress((idx + 1) / total_batches)
+
+        # Display the results
         st.write("Search Results:")
-        for entity, result in results.items():
+        for entity, result in final_results.items():
             st.write(f"Results for {entity}: {result}")
 
-        # Extract information using Groq API
-        extracted_data = extract_information(results, groq_api_key)
         st.write("Extracted Information:")
-        for entity, info in extracted_data.items():
+        for entity, info in extracted_information.items():
             st.write(f"Information for {entity}: {info}")
 
         # Option to download results as CSV
-        if st.button("Download Results"):
-            results_df = pd.DataFrame.from_dict(extracted_data, orient='index', columns=['Extracted Information'])
-            results_csv = results_df.to_csv().encode('utf-8')
-            st.download_button("Download CSV", results_csv, "extracted_information.csv", "text/csv", key='download-csv')
-
-# Error handling
-try:
-    pass  # Main logic is already inside the Streamlit app
-except Exception as e:
-    st.error(f"An error occurred: {str(e)}")
+        results_df = pd.DataFrame.from_dict(extracted_information, orient='index', columns=['Extracted Information'])
+        results_csv = results_df.to_csv().encode('utf-8')
+        st.download_button("Download CSV", results_csv, "extracted_information.csv", "text/csv", key='download-csv')
