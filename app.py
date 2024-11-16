@@ -40,7 +40,7 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using HTTPX and parse results with regex
+# Perform a search using DuckDuckGo
 def perform_search(entities, prompt):
     results = {}
     headers = {
@@ -51,23 +51,23 @@ def perform_search(entities, prompt):
         try:
             search_query = prompt.replace("{entity}", str(entity))
             logging.info(f"Performing search for: {search_query}")
-            url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
+            url = f"https://html.duckduckgo.com/html/?q={search_query.replace(' ', '+')}"
             response = httpx.get(url, headers=headers, timeout=10)
 
             if response.status_code == 200:
                 # Save the response for debugging
                 with open(f"debug_{entity}.html", "w", encoding="utf-8") as f:
                     f.write(response.text)
-                
-                # Extract search snippets
-                snippets = re.findall(r'<span class="BNeawe s3v9rd AP7Wnd">(.*?)</span>', response.text)
+
+                # Extract search snippets using regex
+                snippets = re.findall(r'<a rel="nofollow" class="result__a" href=".*?">(.*?)</a>', response.text)
                 if snippets:
-                    results[entity] = {"snippet": snippets[0]}  # Take the first snippet
+                    results[entity] = snippets[0]  # Take the first result
                 else:
                     results[entity] = "No relevant snippet found"
             else:
                 results[entity] = f"Error: HTTP {response.status_code}"
-            time.sleep(3)  # Delay to avoid blocking
+            time.sleep(2)  # Delay to avoid rate-limiting
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
