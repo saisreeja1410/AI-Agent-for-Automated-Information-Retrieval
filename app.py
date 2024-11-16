@@ -10,8 +10,8 @@ import openai
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Set your OpenAI API key
-openai.api_key = 'your-api-key-here'
+import os
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Authenticate Google Sheets API
 @st.cache_resource
