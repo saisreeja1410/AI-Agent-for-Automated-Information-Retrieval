@@ -54,16 +54,20 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
 def query_openai(api_key, prompt, temperature=0.7, max_tokens=100):
     try:
         openai.api_key = api_key
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # You can use "gpt-4" if you have access
+            messages=[
+                {"role": "system", "content": "You are an assistant that generates search queries."},
+                {"role": "user", "content": prompt}
+            ],
             temperature=temperature,
             max_tokens=max_tokens
         )
-        return response.choices[0].text.strip()
+        return response['choices'][0]['message']['content'].strip()
     except Exception as e:
         logging.error(f"OpenAI API error: {e}")
         return "Error using OpenAI API"
+
 
 # Perform a search using DuckDuckGo or OpenAI
 def perform_search(entities, query_prompt, api_key):
