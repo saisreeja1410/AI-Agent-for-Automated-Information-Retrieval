@@ -70,8 +70,11 @@ def perform_search(entities, query_prompt, api_key):
     results = {}
     for entity in entities:
         try:
+            # Ensure entity is a string
+            entity_str = str(entity)
+            
             # Customize the query using OpenAI
-            prompt = query_prompt.replace("{entity}", entity)
+            prompt = query_prompt.replace("{entity}", entity_str)
             enhanced_query = query_openai(api_key, f"Generate a better query for: {prompt}")
             
             # Search using DuckDuckGo
@@ -81,12 +84,12 @@ def perform_search(entities, query_prompt, api_key):
             if response.status_code == 200:
                 data = response.json()
                 snippet = data.get("AbstractText", "No relevant snippet found")
-                results[entity] = snippet
+                results[entity_str] = snippet
             else:
-                results[entity] = f"Error: HTTP {response.status_code}"
+                results[entity_str] = f"Error: HTTP {response.status_code}"
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
-            results[entity] = "Search error"
+            results[str(entity)] = "Search error"
     return results
 
 # Batch data processing
