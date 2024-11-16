@@ -6,60 +6,65 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
 
-# Set up logging
+# Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Authenticate Google Sheets API
-def authenticate_google_sheets():
-    creds = service_account.Credentials.from_service_account_file(
-        "credentials.json",
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
-    )
-    return creds
+@st.cache_resource
+def authenticate_google_sheets(credentials_file):
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            credentials_file, 
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        )
+        return creds
+    except Exception as e:
+        st.error("Google Sheets authentication failed. Please check the credentials file.")
+        logging.error(f"Google Sheets authentication error: {e}")
+        return None
 
 # Load data from Google Sheets
-def load_google_sheet(spreadsheet_id, range_name):
-    creds = authenticate_google_sheets()
-    service = build('sheets', 'v4', credentials=creds)
-    sheet = service.spreadsheets()
-    result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
-    values = result.get('values', [])
-    if not values:
+def load_google_sheet(creds, spreadsheet_id, range_name):
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+        sheet = service.spreadsheets()
+        result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        if not values:
+            st.warning("No data found in the specified range.")
+            return pd.DataFrame()
+        return pd.DataFrame(values[1:], columns=values[0])
+    except Exception as e:
+        st.error("Failed to load Google Sheets data. Check the Spreadsheet ID and range.")
+        logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
-    else:
-        df = pd.DataFrame(values[1:], columns=values[0])
-        return df
 
 # Perform a search using ScraperAPI
 def perform_search(entities, prompt, api_key):
     results = {}
     for entity in entities:
-        search_query = prompt.replace("{company}", str(entity))
-        logging.info(f"Searching for: {search_query}")
-        url = "http://api.scraperapi.com"
-        params = {
-            "api_key": api_key,
-            "url": f"https://www.google.com/search?q={search_query}"
-        }
-        response = requests.get(url, params=params)
-        logging.info(f"ScraperAPI Response Status: {response.status_code}")
-
-        if response.status_code == 200:
-            try:
+        try:
+            search_query = prompt.replace("{entity}", str(entity))
+            logging.info(f"Performing search for: {search_query}")
+            url = "http://api.scraperapi.com"
+            params = {
+                "api_key": api_key,
+                "url": f"https://www.google.com/search?q={search_query}"
+            }
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
                 soup = BeautifulSoup(response.text, "html.parser")
                 title = soup.find("h3")
                 snippet = soup.find("span")
                 results[entity] = {
-                    "title": title.get_text() if title else "No title found",
-                    "snippet": snippet.get_text() if snippet else "No snippet found"
+                    "title": title.get_text(strip=True) if title else "No title found",
+                    "snippet": snippet.get_text(strip=True) if snippet else "No snippet found"
                 }
-                logging.info(f"Parsed result for {entity}: {results[entity]}")
-            except Exception as e:
-                logging.error(f"Error processing response for {entity}: {str(e)}")
-                results[entity] = f"Error processing response: {str(e)}"
-        else:
-            logging.error(f"ScraperAPI Error for {entity}: {response.status_code}")
-            results[entity] = f"Error: {response.status_code}"
+            else:
+                results[entity] = f"Error: HTTP {response.status_code}"
+        except Exception as e:
+            logging.error(f"Error during search for {entity}: {e}")
+            results[entity] = "Search error"
     return results
 
 # Use Groq API to extract information
@@ -68,93 +73,82 @@ def extract_information(results, groq_api_key):
     headers = {"Authorization": f"Bearer {groq_api_key}"}
 
     for entity, search_results in results.items():
-        payload = {
-            "input": search_results,
-            "instruction": f"Extract relevant information about {entity} from the given search results."
-        }
         try:
-            # Replace with the correct Groq API endpoint
+            payload = {
+                "input": search_results,
+                "instruction": f"Extract relevant information about {entity} from these search results."
+            }
             response = requests.post("https://correct-groq-endpoint.com/process", headers=headers, json=payload)
-            logging.info(f"Groq API response for {entity}: {response.status_code}")
             if response.status_code == 200:
                 extracted_data[entity] = response.json().get("result", "No information extracted.")
             else:
-                extracted_data[entity] = f"Groq API error {response.status_code}: {response.text}"
+                extracted_data[entity] = f"Groq API error: HTTP {response.status_code}"
         except Exception as e:
-            logging.error(f"Groq API error for {entity}: {str(e)}")
-            extracted_data[entity] = f"Error: {str(e)}"
+            logging.error(f"Groq API error for {entity}: {e}")
+            extracted_data[entity] = "Extraction error"
     return extracted_data
 
-# Batch processing for large datasets
+# Batch data processing
 def batch_data(data, batch_size):
     for i in range(0, len(data), batch_size):
         yield data[i:i + batch_size]
 
-# Streamlit app setup
+# Streamlit app
 st.title("AI Agent for Automated Information Retrieval")
 
-# Option to upload CSV or connect to Google Sheets
-data_source = st.radio("Choose data source", ("Upload CSV", "Google Sheets"))
-
+# Data source options
+data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
 data = pd.DataFrame()
+
+# Handle CSV upload
 if data_source == "Upload CSV":
-    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+    uploaded_file = st.file_uploader("Upload a CSV File", type=["csv"])
     if uploaded_file:
         data = pd.read_csv(uploaded_file)
-        st.write("Preview of uploaded data:")
+        st.write("Uploaded Data Preview:")
         st.dataframe(data)
 
-elif data_source == "Google Sheets":
+# Handle Google Sheets integration
+if data_source == "Google Sheets":
+    credentials_file = st.file_uploader("Upload Google Credentials JSON File", type=["json"])
     spreadsheet_id = st.text_input("Enter Google Sheet ID")
-    range_name = st.text_input("Enter the range (e.g., 'Sheet1!A1:D100')")
-    if spreadsheet_id and range_name:
-        data = load_google_sheet(spreadsheet_id, range_name)
-        st.write("Preview of Google Sheets data:")
-        st.dataframe(data)
+    range_name = st.text_input("Enter Data Range (e.g., 'Sheet1!A1:D100')")
+    if credentials_file and spreadsheet_id and range_name:
+        creds = authenticate_google_sheets(credentials_file)
+        if creds:
+            data = load_google_sheet(creds, spreadsheet_id, range_name)
+            st.write("Google Sheets Data Preview:")
+            st.dataframe(data)
 
-# Select main column and set prompt if data is loaded
+# Perform searches and extract information
 if not data.empty:
-    main_column = st.selectbox("Select the main column for entities", data.columns)
-    prompt = st.text_input("Enter your query (e.g., Get email address for {company})")
+    main_column = st.selectbox("Select Main Column for Entities", data.columns)
+    prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
+    scraperapi_key = st.text_input("Enter ScraperAPI Key", type="password")
+    groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
-    # API keys for ScraperAPI and Groq
-    scraperapi_key = st.text_input("Enter your ScraperAPI key", type="password")
-    groq_api_key = st.text_input("Enter your Groq API key", type="password")
-
-    # Run the search and extract information
     if st.button("Run Search") and main_column and prompt and scraperapi_key and groq_api_key:
-        st.write("Running search...")
-        progress_bar = st.progress(0)
-
-        # Initialize results storage
-        final_results = {}
-        extracted_information = {}
+        st.write("Processing Data...")
+        progress = st.progress(0)
+        final_results, extracted_data = {}, {}
 
         # Process in batches
-        entities = data[main_column].tolist()
+        entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
-            # Perform the search
             batch_results = perform_search(batch, prompt, scraperapi_key)
             final_results.update(batch_results)
-
-            # Extract information
             batch_extracted = extract_information(batch_results, groq_api_key)
-            extracted_information.update(batch_extracted)
+            extracted_data.update(batch_extracted)
+            progress.progress((idx + 1) / total_batches)
 
-            # Update progress
-            progress_bar.progress((idx + 1) / total_batches)
+        # Display results
+        st.subheader("Search Results")
+        st.write(pd.DataFrame(final_results).T)
+        st.subheader("Extracted Information")
+        st.write(pd.DataFrame(extracted_data).T)
 
-        # Display the results
-        st.write("Search Results:")
-        for entity, result in final_results.items():
-            st.write(f"Results for {entity}: {result}")
+        # Download results
+        results_csv = pd.DataFrame(extracted_data).T.to_csv().encode('utf-8')
+        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
 
-        st.write("Extracted Information:")
-        for entity, info in extracted_information.items():
-            st.write(f"Information for {entity}: {info}")
-
-        # Option to download results as CSV
-        results_df = pd.DataFrame.from_dict(extracted_information, orient='index', columns=['Extracted Information'])
-        results_csv = results_df.to_csv().encode('utf-8')
-        st.download_button("Download CSV", results_csv, "extracted_information.csv", "text/csv", key='download-csv')
