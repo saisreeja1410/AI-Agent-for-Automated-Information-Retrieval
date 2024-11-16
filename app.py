@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import httpx
 import re
+import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
@@ -54,14 +55,19 @@ def perform_search(entities, prompt):
             response = httpx.get(url, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                # Extract search snippets using regex
-                snippets = re.findall(r'<div class="BNeawe vvjwJb AP7Wnd">(.*?)</div>', response.text)
+                # Save the response for debugging
+                with open(f"debug_{entity}.html", "w", encoding="utf-8") as f:
+                    f.write(response.text)
+                
+                # Extract search snippets
+                snippets = re.findall(r'<span class="BNeawe s3v9rd AP7Wnd">(.*?)</span>', response.text)
                 if snippets:
                     results[entity] = {"snippet": snippets[0]}  # Take the first snippet
                 else:
                     results[entity] = "No relevant snippet found"
             else:
                 results[entity] = f"Error: HTTP {response.status_code}"
+            time.sleep(3)  # Delay to avoid blocking
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
