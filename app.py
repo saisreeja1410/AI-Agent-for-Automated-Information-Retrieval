@@ -7,7 +7,11 @@ from googleapiclient.discovery import build
 import logging
 
 # Logging setup
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(
+    filename="app.log",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 # Authenticate Google Sheets API
 @st.cache_resource
@@ -45,6 +49,7 @@ def perform_search(entities, prompt):
     for entity in entities:
         try:
             search_query = prompt.replace("{entity}", str(entity))
+            logging.info(f"Executing search for: {search_query}")
             url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
             response = httpx.get(url, timeout=10)
 
@@ -102,8 +107,8 @@ if not data.empty:
         final_results = {}
 
         # Process in batches
-        entities = data[main_column].dropna().tolist()
-        total_batches = len(entities)
+        entities = data[main_column].dropna().drop_duplicates().tolist()
+        total_batches = (len(entities) + 9) // 10  # Ceiling division
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
             batch_results = perform_search(batch, prompt)
             final_results.update(batch_results)
@@ -112,8 +117,16 @@ if not data.empty:
         # Display results
         st.subheader("Search Results")
         results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Snippet'])
-        st.write(results_df)
+        results_df.index.name = "Entity"
+        results_df.reset_index(inplace=True)
+        st.dataframe(results_df)
 
         # Download results
-        results_csv = results_df.to_csv().encode('utf-8')
+        results_csv = results_df.to_csv(index=False).encode('utf-8')
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+
+# Footer
+st.write("### Logs")
+with open("app.log", "r") as log_file:
+    logs = log_file.read()
+    st.text_area("Application Logs", logs, height=300)
