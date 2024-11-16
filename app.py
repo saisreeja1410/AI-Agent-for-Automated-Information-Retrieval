@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import httpx
+import openai
 import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -49,13 +50,32 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using DuckDuckGo Instant API
-def perform_search(entities, prompt):
+# OpenAI integration for query enhancement or search
+def query_openai(api_key, prompt, temperature=0.7, max_tokens=100):
+    try:
+        openai.api_key = api_key
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=prompt,
+            temperature=temperature,
+            max_tokens=max_tokens
+        )
+        return response.choices[0].text.strip()
+    except Exception as e:
+        logging.error(f"OpenAI API error: {e}")
+        return "Error using OpenAI API"
+
+# Perform a search using DuckDuckGo or OpenAI
+def perform_search(entities, query_prompt, api_key):
     results = {}
     for entity in entities:
         try:
-            search_query = prompt.replace("{entity}", str(entity))
-            url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
+            # Customize the query using OpenAI
+            prompt = query_prompt.replace("{entity}", entity)
+            enhanced_query = query_openai(api_key, f"Generate a better query for: {prompt}")
+            
+            # Search using DuckDuckGo
+            url = f"https://api.duckduckgo.com/?q={enhanced_query}&format=json&pretty=1"
             response = httpx.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -75,7 +95,10 @@ def batch_data(data, batch_size):
         yield data[i:i + batch_size]
 
 # Streamlit app
-st.title("AI Agent for Automated Information Retrieval")
+st.title("AI Agent for Automated Information Retrieval (OpenAI Enhanced)")
+
+# OpenAI API key input
+openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
 
 # Data source options
 data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
@@ -102,11 +125,11 @@ if data_source == "Google Sheets":
             st.dataframe(data)
 
 # Perform searches
-if not data.empty:
+if not data.empty and openai_api_key:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
-    prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
+    query_prompt = st.text_input("Enter Query Prompt (e.g., Get details for {entity})")
 
-    if st.button("Run Search") and main_column and prompt:
+    if st.button("Run Search") and main_column and query_prompt:
         st.write("Processing Data...")
         progress = st.progress(0)
         final_results = {}
@@ -115,7 +138,7 @@ if not data.empty:
         entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
-            batch_results = perform_search(batch, prompt)
+            batch_results = perform_search(batch, query_prompt, openai_api_key)
             final_results.update(batch_results)
             progress.progress((idx + 1) / total_batches)
 
