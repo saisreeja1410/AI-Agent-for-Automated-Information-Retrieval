@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import httpx
-import re
 import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -40,34 +39,21 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using DuckDuckGo
+# Perform a search using DuckDuckGo Instant API
 def perform_search(entities, prompt):
     results = {}
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
-    }
-
     for entity in entities:
         try:
             search_query = prompt.replace("{entity}", str(entity))
-            logging.info(f"Performing search for: {search_query}")
-            url = f"https://html.duckduckgo.com/html/?q={search_query.replace(' ', '+')}"
-            response = httpx.get(url, headers=headers, timeout=10)
+            url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
+            response = httpx.get(url, timeout=10)
 
             if response.status_code == 200:
-                # Save the response for debugging
-                with open(f"debug_{entity}.html", "w", encoding="utf-8") as f:
-                    f.write(response.text)
-
-                # Extract search snippets using regex
-                snippets = re.findall(r'<a rel="nofollow" class="result__a" href=".*?">(.*?)</a>', response.text)
-                if snippets:
-                    results[entity] = snippets[0]  # Take the first result
-                else:
-                    results[entity] = "No relevant snippet found"
+                data = response.json()
+                snippet = data.get("AbstractText", "No relevant snippet found")
+                results[entity] = snippet
             else:
                 results[entity] = f"Error: HTTP {response.status_code}"
-            time.sleep(2)  # Delay to avoid rate-limiting
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
