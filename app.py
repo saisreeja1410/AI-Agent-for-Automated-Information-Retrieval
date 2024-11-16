@@ -1,9 +1,13 @@
 import streamlit as st
 import pandas as pd
 import requests
+from bs4 import BeautifulSoup
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import json
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Authenticate Google Sheets API
 def authenticate_google_sheets():
@@ -31,20 +35,30 @@ def perform_search(entities, prompt, api_key):
     results = {}
     for entity in entities:
         search_query = prompt.replace("{company}", str(entity))
+        logging.info(f"Searching for: {search_query}")
         url = "http://api.scraperapi.com"
         params = {
             "api_key": api_key,
             "url": f"https://www.google.com/search?q={search_query}"
         }
         response = requests.get(url, params=params)
+        logging.info(f"ScraperAPI Response Status: {response.status_code}")
 
         if response.status_code == 200:
             try:
-                # Parse and use meaningful parts of the response
-                results[entity] = response.text[:200]  # Return the first 200 characters as a mock result
+                soup = BeautifulSoup(response.text, "html.parser")
+                title = soup.find("h3")
+                snippet = soup.find("span")
+                results[entity] = {
+                    "title": title.get_text() if title else "No title found",
+                    "snippet": snippet.get_text() if snippet else "No snippet found"
+                }
+                logging.info(f"Parsed result for {entity}: {results[entity]}")
             except Exception as e:
+                logging.error(f"Error processing response for {entity}: {str(e)}")
                 results[entity] = f"Error processing response: {str(e)}"
         else:
+            logging.error(f"ScraperAPI Error for {entity}: {response.status_code}")
             results[entity] = f"Error: {response.status_code}"
     return results
 
@@ -59,16 +73,19 @@ def extract_information(results, groq_api_key):
             "instruction": f"Extract relevant information about {entity} from the given search results."
         }
         try:
-            response = requests.post("https://api.groq.com/process", headers=headers, json=payload)
+            # Replace with the correct Groq API endpoint
+            response = requests.post("https://correct-groq-endpoint.com/process", headers=headers, json=payload)
+            logging.info(f"Groq API response for {entity}: {response.status_code}")
             if response.status_code == 200:
                 extracted_data[entity] = response.json().get("result", "No information extracted.")
             else:
                 extracted_data[entity] = f"Groq API error {response.status_code}: {response.text}"
         except Exception as e:
+            logging.error(f"Groq API error for {entity}: {str(e)}")
             extracted_data[entity] = f"Error: {str(e)}"
     return extracted_data
 
-# Split data into batches
+# Batch processing for large datasets
 def batch_data(data, batch_size):
     for i in range(0, len(data), batch_size):
         yield data[i:i + batch_size]
