@@ -49,25 +49,24 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         st.error("Failed to load Google Sheets data. Check the Spreadsheet ID and range.")
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
-
+        
 # OpenAI integration for query enhancement or search
 def query_openai(api_key, prompt, temperature=0.7, max_tokens=100):
     try:
         openai.api_key = api_key
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # You can use "gpt-4" if you have access
+            model="gpt-4",  # Replace with "gpt-3.5-turbo" if needed
             messages=[
-                {"role": "system", "content": "You are an assistant that generates search queries."},
+                {"role": "system", "content": "You are an assistant for generating enhanced search queries."},
                 {"role": "user", "content": prompt}
             ],
             temperature=temperature,
             max_tokens=max_tokens
         )
-        return response['choices'][0]['message']['content'].strip()
-    except Exception as e:
+        return response.choices[0].message["content"].strip()
+    except openai.error.OpenAIError as e:
         logging.error(f"OpenAI API error: {e}")
         return "Error using OpenAI API"
-
 
 # Perform a search using DuckDuckGo or OpenAI
 def perform_search(entities, query_prompt, api_key):
