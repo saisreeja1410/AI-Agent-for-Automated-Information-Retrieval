@@ -1,24 +1,17 @@
 import streamlit as st
 import pandas as pd
 import httpx
-import openai
 import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
-import os
+import openai
 
-# Ensure log file exists and configure logging
-log_file_path = "app.log"
-if not os.path.exists(log_file_path):
-    with open(log_file_path, "w") as log_file:
-        log_file.write("")  # Create an empty log file
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-logging.basicConfig(
-    filename=log_file_path,
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# Set your OpenAI API key
+openai.api_key = 'your-api-key-here'
 
 # Authenticate Google Sheets API
 @st.cache_resource
@@ -49,66 +42,25 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         st.error("Failed to load Google Sheets data. Check the Spreadsheet ID and range.")
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
-        
-import openai
-import logging
 
-# Set the OpenAI API Key
-openai.api_key = 'your-api-key-here'
-
-# Function to query OpenAI
-def query_openai(api_key, prompt, temperature=0.7, max_tokens=100):
-    try:
-        # Set the API Key
-        openai.api_key = api_key
-        
-        # Query OpenAI API
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",  # Change to 'gpt-4' if needed
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=temperature,
-            max_tokens=max_tokens
-        )
-        
-        # Return response content
-        return response['choices'][0]['message']['content'].strip()
-    
-    except openai.error.OpenAIError as e:  # OpenAI-specific error
-        logging.error(f"OpenAI API error: {e}")
-        return "Error using OpenAI API"
-    
-    except Exception as e:  # General exception handling
-        logging.error(f"Unexpected error: {e}")
-        return "An unexpected error occurred"
-
-# Perform a search using DuckDuckGo or OpenAI
-def perform_search(entities, query_prompt, api_key):
+# Perform a search using DuckDuckGo Instant API
+def perform_search(entities, prompt):
     results = {}
     for entity in entities:
         try:
-            # Ensure entity is a string
-            entity_str = str(entity)
-            
-            # Customize the query using OpenAI
-            prompt = query_prompt.replace("{entity}", entity_str)
-            enhanced_query = query_openai(api_key, f"Generate a better query for: {prompt}")
-            
-            # Search using DuckDuckGo
-            url = f"https://api.duckduckgo.com/?q={enhanced_query}&format=json&pretty=1"
+            search_query = prompt.replace("{entity}", str(entity))
+            url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
             response = httpx.get(url, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
                 snippet = data.get("AbstractText", "No relevant snippet found")
-                results[entity_str] = snippet
+                results[entity] = snippet
             else:
-                results[entity_str] = f"Error: HTTP {response.status_code}"
+                results[entity] = f"Error: HTTP {response.status_code}"
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
-            results[str(entity)] = "Search error"
+            results[entity] = "Search error"
     return results
 
 # Batch data processing
@@ -117,10 +69,7 @@ def batch_data(data, batch_size):
         yield data[i:i + batch_size]
 
 # Streamlit app
-st.title("AI Agent for Automated Information Retrieval (OpenAI Enhanced)")
-
-# OpenAI API key input
-openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
+st.title("AI Agent for Automated Information Retrieval")
 
 # Data source options
 data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
@@ -147,11 +96,11 @@ if data_source == "Google Sheets":
             st.dataframe(data)
 
 # Perform searches
-if not data.empty and openai_api_key:
+if not data.empty:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
-    query_prompt = st.text_input("Enter Query Prompt (e.g., Get details for {entity})")
+    prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
 
-    if st.button("Run Search") and main_column and query_prompt:
+    if st.button("Run Search") and main_column and prompt:
         st.write("Processing Data...")
         progress = st.progress(0)
         final_results = {}
@@ -160,7 +109,7 @@ if not data.empty and openai_api_key:
         entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
-            batch_results = perform_search(batch, query_prompt, openai_api_key)
+            batch_results = perform_search(batch, prompt)
             final_results.update(batch_results)
             progress.progress((idx + 1) / total_batches)
 
@@ -173,11 +122,21 @@ if not data.empty and openai_api_key:
         results_csv = results_df.to_csv().encode('utf-8')
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
 
-# Footer to display logs
-st.write("### Logs")
-try:
-    with open(log_file_path, "r") as log_file:
-        logs = log_file.read()
-        st.text_area("Application Logs", logs, height=300)
-except FileNotFoundError:
-    st.warning("Log file not found. No logs to display.")
+# OpenAI API interaction example (updated to use the new interface)
+def query_openai_api(prompt):
+    try:
+        response = openai.completions.create(
+            model="gpt-3.5-turbo",  # Use the appropriate model
+            prompt=prompt,
+            max_tokens=100
+        )
+        return response['choices'][0]['text'].strip()
+    except Exception as e:
+        logging.error(f"OpenAI API error: {e}")
+        return "Error occurred while querying OpenAI."
+
+# Example OpenAI query (just for illustration purposes)
+openai_query = st.text_input("Query OpenAI API", "Tell me about {entity}")
+if openai_query:
+    result = query_openai_api(openai_query)
+    st.write(f"OpenAI Response: {result}")
