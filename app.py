@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup4
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
@@ -39,32 +39,43 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using ScraperAPI
-def perform_search(entities, prompt, api_key):
+import requests
+from bs4 import BeautifulSoup4
+import logging
+
+# Perform a search using Requests + BeautifulSoup
+def perform_search(entities, prompt):
     results = {}
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+        )
+    }
+
     for entity in entities:
+        search_query = prompt.replace("{entity}", str(entity))
+        logging.info(f"Searching for: {search_query}")
+        url = f"https://www.google.com/search?q={search_query}"
+
         try:
-            search_query = prompt.replace("{entity}", str(entity))
-            logging.info(f"Performing search for: {search_query}")
-            url = "http://api.scraperapi.com"
-            params = {
-                "api_key": api_key,
-                "url": f"https://www.google.com/search?q={search_query}"
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()  # Raise error for HTTP issues
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Extract relevant information from the search page
+            title = soup.find("h3")  # First result title
+            snippet = soup.find("span")  # First result snippet
+
+            results[entity] = {
+                "title": title.get_text(strip=True) if title else "No title found",
+                "snippet": snippet.get_text(strip=True) if snippet else "No snippet found"
             }
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                soup = BeautifulSoup(response.text, "html.parser")
-                title = soup.find("h3")
-                snippet = soup.find("span")
-                results[entity] = {
-                    "title": title.get_text(strip=True) if title else "No title found",
-                    "snippet": snippet.get_text(strip=True) if snippet else "No snippet found"
-                }
-            else:
-                results[entity] = f"Error: HTTP {response.status_code}"
+            logging.info(f"Results for {entity}: {results[entity]}")
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
+
     return results
 
 # Use Groq API to extract information
