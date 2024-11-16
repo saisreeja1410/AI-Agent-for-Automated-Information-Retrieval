@@ -5,10 +5,16 @@ import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
+import os
 
-# Logging setup
+# Ensure log file exists and configure logging
+log_file_path = "app.log"
+if not os.path.exists(log_file_path):
+    with open(log_file_path, "w") as log_file:
+        log_file.write("")  # Create an empty log file
+
 logging.basicConfig(
-    filename="app.log",
+    filename=log_file_path,
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
@@ -49,7 +55,6 @@ def perform_search(entities, prompt):
     for entity in entities:
         try:
             search_query = prompt.replace("{entity}", str(entity))
-            logging.info(f"Executing search for: {search_query}")
             url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
             response = httpx.get(url, timeout=10)
 
@@ -107,8 +112,8 @@ if not data.empty:
         final_results = {}
 
         # Process in batches
-        entities = data[main_column].dropna().drop_duplicates().tolist()
-        total_batches = (len(entities) + 9) // 10  # Ceiling division
+        entities = data[main_column].dropna().tolist()
+        total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
             batch_results = perform_search(batch, prompt)
             final_results.update(batch_results)
@@ -117,16 +122,17 @@ if not data.empty:
         # Display results
         st.subheader("Search Results")
         results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Snippet'])
-        results_df.index.name = "Entity"
-        results_df.reset_index(inplace=True)
-        st.dataframe(results_df)
+        st.write(results_df)
 
         # Download results
-        results_csv = results_df.to_csv(index=False).encode('utf-8')
+        results_csv = results_df.to_csv().encode('utf-8')
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
 
-# Footer
+# Footer to display logs
 st.write("### Logs")
-with open("app.log", "r") as log_file:
-    logs = log_file.read()
-    st.text_area("Application Logs", logs, height=300)
+try:
+    with open(log_file_path, "r") as log_file:
+        logs = log_file.read()
+        st.text_area("Application Logs", logs, height=300)
+except FileNotFoundError:
+    st.warning("Log file not found. No logs to display.")
