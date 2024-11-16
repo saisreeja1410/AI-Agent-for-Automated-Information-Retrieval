@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup4
+import httpx
+import re
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
@@ -39,65 +39,33 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-import requests
-from bs4 import BeautifulSoup4
-import logging
-
-# Perform a search using Requests + BeautifulSoup
+# Perform a search using HTTPX and parse results with regex
 def perform_search(entities, prompt):
     results = {}
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
-        )
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
     }
 
     for entity in entities:
-        search_query = prompt.replace("{entity}", str(entity))
-        logging.info(f"Searching for: {search_query}")
-        url = f"https://www.google.com/search?q={search_query}"
-
         try:
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()  # Raise error for HTTP issues
-            soup = BeautifulSoup(response.text, "html.parser")
+            search_query = prompt.replace("{entity}", str(entity))
+            logging.info(f"Performing search for: {search_query}")
+            url = f"https://www.google.com/search?q={search_query.replace(' ', '+')}"
+            response = httpx.get(url, headers=headers, timeout=10)
 
-            # Extract relevant information from the search page
-            title = soup.find("h3")  # First result title
-            snippet = soup.find("span")  # First result snippet
-
-            results[entity] = {
-                "title": title.get_text(strip=True) if title else "No title found",
-                "snippet": snippet.get_text(strip=True) if snippet else "No snippet found"
-            }
-            logging.info(f"Results for {entity}: {results[entity]}")
+            if response.status_code == 200:
+                # Extract search snippets using regex
+                snippets = re.findall(r'<div class="BNeawe vvjwJb AP7Wnd">(.*?)</div>', response.text)
+                if snippets:
+                    results[entity] = {"snippet": snippets[0]}  # Take the first snippet
+                else:
+                    results[entity] = "No relevant snippet found"
+            else:
+                results[entity] = f"Error: HTTP {response.status_code}"
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
-
     return results
-
-# Use Groq API to extract information
-def extract_information(results, groq_api_key):
-    extracted_data = {}
-    headers = {"Authorization": f"Bearer {groq_api_key}"}
-
-    for entity, search_results in results.items():
-        try:
-            payload = {
-                "input": search_results,
-                "instruction": f"Extract relevant information about {entity} from these search results."
-            }
-            response = requests.post("https://correct-groq-endpoint.com/process", headers=headers, json=payload)
-            if response.status_code == 200:
-                extracted_data[entity] = response.json().get("result", "No information extracted.")
-            else:
-                extracted_data[entity] = f"Groq API error: HTTP {response.status_code}"
-        except Exception as e:
-            logging.error(f"Groq API error for {entity}: {e}")
-            extracted_data[entity] = "Extraction error"
-    return extracted_data
 
 # Batch data processing
 def batch_data(data, batch_size):
@@ -131,35 +99,29 @@ if data_source == "Google Sheets":
             st.write("Google Sheets Data Preview:")
             st.dataframe(data)
 
-# Perform searches and extract information
+# Perform searches
 if not data.empty:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
     prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
-    scraperapi_key = st.text_input("Enter ScraperAPI Key", type="password")
-    groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
-    if st.button("Run Search") and main_column and prompt and scraperapi_key and groq_api_key:
+    if st.button("Run Search") and main_column and prompt:
         st.write("Processing Data...")
         progress = st.progress(0)
-        final_results, extracted_data = {}, {}
+        final_results = {}
 
         # Process in batches
         entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
-            batch_results = perform_search(batch, prompt, scraperapi_key)
+            batch_results = perform_search(batch, prompt)
             final_results.update(batch_results)
-            batch_extracted = extract_information(batch_results, groq_api_key)
-            extracted_data.update(batch_extracted)
             progress.progress((idx + 1) / total_batches)
 
         # Display results
         st.subheader("Search Results")
-        st.write(pd.DataFrame(final_results).T)
-        st.subheader("Extracted Information")
-        st.write(pd.DataFrame(extracted_data).T)
+        results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Snippet'])
+        st.write(results_df)
 
         # Download results
-        results_csv = pd.DataFrame(extracted_data).T.to_csv().encode('utf-8')
+        results_csv = results_df.to_csv().encode('utf-8')
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
-
