@@ -31,9 +31,7 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
     except Exception as e:
         st.error(f"Error loading Google Sheet: {e}")
         return pd.DataFrame()
-print(type(entities))
-print(entities.head())  # If entities is a DataFrame
-import pandas as pd
+
 
 def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
     results = []
