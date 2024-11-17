@@ -59,23 +59,20 @@ def perform_search(entities, prompt, main_column):
             results[entity] = "Search error"
     return results
 
-# Groq API Integration for Processing
 def process_with_groq_api(results, groq_api_key):
     processed_results = {}
-    headers = {"Authorization": f"Bearer {groq_api_key}"}
+    headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
 
     for entity, snippet in results.items():
         try:
-            # Construct the messages format required by the Groq API
+            # Prepare the messages for the Groq API
             messages = [
-                {"role": "system", "content": "You are an assistant helping with information retrieval."},
                 {"role": "user", "content": f"Extract relevant details about {entity} from this snippet: {snippet}"}
             ]
+            # Use the updated model name
             payload = {
-                "model": "gpt-3.5-turbo",  # Ensure the model matches Groq API's supported models
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 100
+                "model": "llama3-8b-8192",  # Updated model name
+                "messages": messages
             }
             logging.info(f"Sending payload to Groq API: {payload}")
             response = httpx.post(
@@ -84,11 +81,13 @@ def process_with_groq_api(results, groq_api_key):
                 json=payload,
                 timeout=10
             )
+
             if response.status_code == 200:
+                # Parse the response and extract content
                 processed_results[entity] = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No result extracted.")
             else:
                 logging.error(f"Groq API response for {entity}: {response.status_code}, {response.text}")
-                processed_results[entity] = f"Groq API Error: {response.status_code}"
+                processed_results[entity] = f"Groq API Error: {response.status_code}, {response.json().get('error', {}).get('message', 'Unknown error')}"
         except Exception as e:
             logging.error(f"Groq API error for {entity}: {e}")
             processed_results[entity] = "Processing error"
