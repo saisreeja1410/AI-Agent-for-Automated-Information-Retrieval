@@ -4,9 +4,53 @@ import httpx
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from urllib.parse import quote
 import time
-import math
+
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Function to authenticate Google Sheets
+def authenticate_google_sheets(credentials_file):
+    try:
+        creds = service_account.Credentials.from_service_account_file(credentials_file)
+        return creds
+    except Exception as e:
+        st.error(f"Error authenticating Google Sheets: {e}")
+        return None
+
+# Function to load data from Google Sheets
+def load_google_sheet(creds, spreadsheet_id, range_name):
+    try:
+        service = build('sheets', 'v4', credentials=creds)
+        sheet = service.spreadsheets()
+        result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        if not values:
+            st.warning("No data found in the specified range.")
+            return pd.DataFrame()
+        return pd.DataFrame(values[1:], columns=values[0])  # Use the first row as header
+    except Exception as e:
+        st.error(f"Error loading Google Sheet: {e}")
+        return pd.DataFrame()
+
+# Placeholder function for batch processing
+def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
+    results = []
+    for i in range(0, len(entities), batch_size):
+        batch = entities[i:i + batch_size]
+        # Simulate processing with a placeholder response
+        for entity in batch:
+            results.append({"entity": entity, "response": f"Processed {entity} with prompt: {prompt}"})
+        time.sleep(1)  # Simulate a delay for rate limiting
+    return results
+
+# Placeholder function to process results with LLM
+def process_with_llm(results, llm_api_key):
+    # Simulate LLM processing
+    final_results = {}
+    for result in results:
+        final_results[result["entity"]] = f"Final output for {result['entity']}"
+    return final_results
 
 # Streamlit App
 st.title("AI Agent for Automated Information Retrieval")
@@ -45,11 +89,6 @@ if not data.empty:
     # Validate the selected column
     if main_column not in data.columns:
         st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
-        st.stop()
-
-    # Check if the selected column is numeric
-    if data[main_column].dtype in [int, float]:
-        st.warning(f"The selected column '{main_column}' contains numeric data. Please choose a column with valid strings.")
         st.stop()
 
     # Convert to strings and drop NaN values
