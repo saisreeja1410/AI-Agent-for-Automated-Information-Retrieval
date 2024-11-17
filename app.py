@@ -164,29 +164,21 @@ if not data.empty:
     llm_api_key = st.text_input("Enter LLM API Key", type="password")
     batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
-    # Validation for data and selected column
-    if data.empty:
-        st.error("No data found. Please upload a valid file or connect to a Google Sheet.")
-        st.stop()
-
-    if main_column not in data.columns:
-        st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
-        st.stop()
-
-    if data[main_column].dtype not in [object, str]:
-        st.warning(f"The selected column '{main_column}' contains non-string data. It will be converted to strings for processing.")
-        data[main_column] = data[main_column].astype(str)
-
-    # Proceed only if all inputs are valid
     if st.button("Run Query") and main_column and prompt and rapidapi_key and llm_api_key:
         st.write("Processing...")
         progress = st.progress(0)
-        entities = data[main_column].dropna().astype(str).str.strip().tolist()
 
-        # Ensure prompt is valid
+        # Convert to strings and drop NaN values
+        entities = data[main_column].dropna().astype(str).tolist()
+
+        # Debugging output to check entities
+        st.write("Entities to process:", entities)
+
+        # Ensure that the prompt contains the placeholder
         if f"{{{main_column}}}" not in prompt:
             st.error(f"The prompt must contain the placeholder {{{main_column}}}")
         else:
+            # Call batch_process with valid entities
             results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
 
             # Process with LLM
@@ -200,4 +192,3 @@ if not data.empty:
             # Download results
             results_csv = results_df.to_csv(index=False).encode("utf-8")
             st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
-
