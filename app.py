@@ -59,26 +59,33 @@ def perform_search(entities, prompt, main_column):
             results[entity] = "Search error"
     return results
 
-# Process responses using Groq API
+# Groq API Integration for Processing
 def process_with_groq_api(results, groq_api_key):
     processed_results = {}
     headers = {"Authorization": f"Bearer {groq_api_key}"}
 
     for entity, snippet in results.items():
         try:
+            # Construct the messages format required by the Groq API
+            messages = [
+                {"role": "system", "content": "You are an assistant helping with information retrieval."},
+                {"role": "user", "content": f"Extract relevant details about {entity} from this snippet: {snippet}"}
+            ]
             payload = {
-                "input": snippet,
-                "instruction": f"Extract relevant details for {entity}."
+                "model": "gpt-3.5-turbo",  # Ensure the model matches Groq API's supported models
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 100
             }
             logging.info(f"Sending payload to Groq API: {payload}")
             response = httpx.post(
-                "https://api.groq.com/openai/v1/chat/completions",  # Verify this URL
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers=headers,
                 json=payload,
                 timeout=10
             )
             if response.status_code == 200:
-                processed_results[entity] = response.json().get("result", "No result extracted.")
+                processed_results[entity] = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No result extracted.")
             else:
                 logging.error(f"Groq API response for {entity}: {response.status_code}, {response.text}")
                 processed_results[entity] = f"Groq API Error: {response.status_code}"
