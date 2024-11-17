@@ -31,22 +31,21 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
     except Exception as e:
         st.error(f"Error loading Google Sheet: {e}")
         return pd.DataFrame()
+print(type(entities))
+print(entities.head())  # If entities is a DataFrame
+import pandas as pd
 
-# Function to process the query and extract city based on index
 def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
     results = []
     for i in range(0, len(entities), batch_size):
-        batch = entities[i:i + batch_size]
-        for entity in batch:
-            # Extract the index from the entity (assuming entity is a DataFrame row)
-            index = entity['Index']  # Adjust this based on your DataFrame structure
-            # Extract the city based on the index
+        batch = entities.iloc[i:i + batch_size]  # Use .iloc to get rows
+        for index, entity in batch.iterrows():  # Iterate over rows
+            # Access the columns directly
             city = entity['City']  # Adjust this based on your DataFrame structure
-            response = f"City for Index {index} is {city}."
+            response = f"City for Index {entity['Index']} is {city}."
             results.append({"entity": entity, "response": response})
         time.sleep(1)  # Simulate a delay for rate limiting
     return results
-
 # Function to process results with LLM
 def process_with_llm(results, llm_api_key):
     final_results = {}
