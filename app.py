@@ -5,13 +5,9 @@ import time
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import logging
-import openai
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-import os
-openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # Authenticate Google Sheets API
 @st.cache_resource
@@ -63,6 +59,32 @@ def perform_search(entities, prompt):
             results[entity] = "Search error"
     return results
 
+# Process responses using Groq API
+def process_with_groq_api(results, groq_api_key):
+    processed_results = {}
+    headers = {"Authorization": f"Bearer {groq_api_key}"}
+
+    for entity, snippet in results.items():
+        try:
+            payload = {
+                "input": snippet,
+                "instruction": f"Extract relevant details for {entity}."
+            }
+            response = httpx.post(
+                "https://api.groq.com/process", 
+                headers=headers, 
+                json=payload, 
+                timeout=10
+            )
+            if response.status_code == 200:
+                processed_results[entity] = response.json().get("result", "No result extracted.")
+            else:
+                processed_results[entity] = f"Groq API Error: {response.status_code}"
+        except Exception as e:
+            logging.error(f"Groq API error for {entity}: {e}")
+            processed_results[entity] = "Processing error"
+    return processed_results
+
 # Batch data processing
 def batch_data(data, batch_size):
     for i in range(0, len(data), batch_size):
@@ -95,48 +117,31 @@ if data_source == "Google Sheets":
             st.write("Google Sheets Data Preview:")
             st.dataframe(data)
 
-# Perform searches
+# Perform searches and process results
 if not data.empty:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
     prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
+    groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
-    if st.button("Run Search") and main_column and prompt:
+    if st.button("Run Search") and main_column and prompt and groq_api_key:
         st.write("Processing Data...")
         progress = st.progress(0)
         final_results = {}
 
-        # Process in batches
+        # Perform search in batches
         entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
             batch_results = perform_search(batch, prompt)
-            final_results.update(batch_results)
+            processed_results = process_with_groq_api(batch_results, groq_api_key)
+            final_results.update(processed_results)
             progress.progress((idx + 1) / total_batches)
 
         # Display results
-        st.subheader("Search Results")
-        results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Snippet'])
+        st.subheader("Processed Results")
+        results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Extracted Information'])
         st.write(results_df)
 
         # Download results
         results_csv = results_df.to_csv().encode('utf-8')
-        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
-
-# OpenAI API interaction example (updated to use the new interface)
-def query_openai_api(prompt):
-    try:
-        response = openai.completions.create(
-            model="gpt-3.5-turbo",  # Use the appropriate model
-            prompt=prompt,
-            max_tokens=100
-        )
-        return response['choices'][0]['text'].strip()
-    except Exception as e:
-        logging.error(f"OpenAI API error: {e}")
-        return "Error occurred while querying OpenAI."
-
-# Example OpenAI query (just for illustration purposes)
-openai_query = st.text_input("Query OpenAI API", "Tell me about {entity}")
-if openai_query:
-    result = query_openai_api(openai_query)
-    st.write(f"OpenAI Response: {result}")
+        st.download_button("Download Results as CSV", results_csv, "processed_results.csv", "text/csv")
