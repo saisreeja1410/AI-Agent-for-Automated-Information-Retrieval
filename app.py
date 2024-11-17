@@ -32,27 +32,27 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         st.error(f"Error loading Google Sheet: {e}")
         return pd.DataFrame()
 
-# Placeholder function for batch processing
+# Function to process the query and extract city based on index
 def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
     results = []
     for i in range(0, len(entities), batch_size):
         batch = entities[i:i + batch_size]
-        # Simulate processing with a more meaningful response
         for entity in batch:
-            # Here you can implement actual logic to generate a response based on the entity
-            response = f"Processed {entity} with prompt: {prompt.replace('{main_column}', entity)}"
+            # Extract the index from the entity (assuming entity is a DataFrame row)
+            index = entity['Index']  # Adjust this based on your DataFrame structure
+            # Extract the city based on the index
+            city = entity['City']  # Adjust this based on your DataFrame structure
+            response = f"City for Index {index} is {city}."
             results.append({"entity": entity, "response": response})
         time.sleep(1)  # Simulate a delay for rate limiting
     return results
 
-
-# Placeholder function to process results with LLM
+# Function to process results with LLM
 def process_with_llm(results, llm_api_key):
-    # Simulate LLM processing with a more meaningful output
     final_results = {}
     for result in results:
         # Here you can implement actual logic to generate a final output
-        final_results[result["entity"]] = f"Final output for {result['entity']} based on processed data."
+        final_results[result["entity"]['Index']] = f"Final output for {result['entity']['Index']}: {result['response']}"
     return final_results
 
 # Streamlit App
