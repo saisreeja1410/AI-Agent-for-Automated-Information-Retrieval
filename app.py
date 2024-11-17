@@ -4,7 +4,7 @@ import httpx
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import time
+import math
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -31,11 +31,11 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
         values = result.get('values', [])
         if not values:
-            st.warning("No data found in the specified range.")
+            st.warning("No data found in the specified range. Please verify the range format (e.g., 'Sheet1!A1:D100').")
             return pd.DataFrame()
         return pd.DataFrame(values[1:], columns=values[0])
     except Exception as e:
-        st.error("Failed to load Google Sheets data. Check the Spreadsheet ID and range.")
+        st.error("Failed to load Google Sheets data. Please verify the Spreadsheet ID and range format.")
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
@@ -52,16 +52,16 @@ def perform_search(entities, prompt, main_column, rapidapi_key):
             search_query = prompt.replace(f"{{{main_column}}}", str(entity))
             url = f"https://google-search3.p.rapidapi.com/api/v1/search/q={search_query}"
             response = httpx.get(url, headers=headers, timeout=10)
-
-            if response.status_code == 200:
-                data = response.json()
-                snippets = [result["description"] for result in data.get("results", [])]
-                results[entity] = snippets[0] if snippets else "No relevant snippet found"
-            else:
-                results[entity] = f"Error: HTTP {response.status_code}"
+            response.raise_for_status()  # Raises exception for HTTP errors
+            data = response.json()
+            snippets = [result["description"] for result in data.get("results", [])]
+            results[entity] = snippets[0] if snippets else "No relevant snippet found"
+        except httpx.RequestError as e:
+            logging.error(f"HTTP request error for {entity}: {e}")
+            results[entity] = "Request error"
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
-            results[entity] = "Search error"
+            results[entity] = "Unknown error"
     return results
 
 # Process snippets with Groq API
@@ -70,7 +70,7 @@ def process_with_groq_api(results, groq_api_key):
     headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
 
     for entity, snippet in results.items():
-        if snippet in ["No relevant snippet found", "Search error"]:
+        if snippet in ["No relevant snippet found", "Request error", "Unknown error"]:
             processed_results[entity] = snippet
             continue
 
@@ -97,8 +97,7 @@ def process_with_groq_api(results, groq_api_key):
 
 # Batch data processing
 def batch_data(data, batch_size):
-    for i in range(0, len(data), batch_size):
-        yield data[i:i + batch_size]
+    return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
 # Streamlit app
 st.title("AI Agent for Automated Information Retrieval")
@@ -133,14 +132,15 @@ if not data.empty:
     rapidapi_key = st.text_input("Enter RapidAPI Key", type="password")
     groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
-    if st.button("Run Search") and main_column and prompt and rapidapi_key:
+    if st.button("Run Search") and main_column and prompt and rapidapi_key and groq_api_key:
         st.write("Processing Data...")
         progress = st.progress(0)
         final_results = {}
 
         # Perform search in batches
         entities = data[main_column].dropna().tolist()
-        total_batches = len(entities)
+        total_batches = math.ceil(len(entities) / 10)
+
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
             batch_results = perform_search(batch, prompt, main_column, rapidapi_key)
             processed_results = process_with_groq_api(batch_results, groq_api_key)
