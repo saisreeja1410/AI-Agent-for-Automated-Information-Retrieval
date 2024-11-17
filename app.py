@@ -1,3 +1,4 @@
+import streamlit as st
 # Streamlit App
 st.title("AI Agent for Automated Information Retrieval")
 
