@@ -37,18 +37,22 @@ def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
     results = []
     for i in range(0, len(entities), batch_size):
         batch = entities[i:i + batch_size]
-        # Simulate processing with a placeholder response
+        # Simulate processing with a more meaningful response
         for entity in batch:
-            results.append({"entity": entity, "response": f"Processed {entity} with prompt: {prompt}"})
+            # Here you can implement actual logic to generate a response based on the entity
+            response = f"Processed {entity} with prompt: {prompt.replace('{main_column}', entity)}"
+            results.append({"entity": entity, "response": response})
         time.sleep(1)  # Simulate a delay for rate limiting
     return results
 
+
 # Placeholder function to process results with LLM
 def process_with_llm(results, llm_api_key):
-    # Simulate LLM processing
+    # Simulate LLM processing with a more meaningful output
     final_results = {}
     for result in results:
-        final_results[result["entity"]] = f"Final output for {result['entity']}"
+        # Here you can implement actual logic to generate a final output
+        final_results[result["entity"]] = f"Final output for {result['entity']} based on processed data."
     return final_results
 
 # Streamlit App
