@@ -1,9 +1,11 @@
 import streamlit as st
 import pandas as pd
 import httpx
+import re
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import time
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -38,22 +40,26 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using DuckDuckGo Instant API
+# Perform a search using DuckDuckGo HTML scraping
 def perform_search(entities, prompt, main_column):
     results = {}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+    }
+
     for entity in entities:
         try:
             search_query = prompt.replace(f"{{{main_column}}}", str(entity))
-            url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
-            logging.info(f"Performing search query: {search_query}")
-            response = httpx.get(url, timeout=10)
+            url = f"https://html.duckduckgo.com/html/?q={search_query.replace(' ', '+')}"
+            response = httpx.get(url, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                data = response.json()
-                snippet = data.get("AbstractText", "No relevant snippet found")
-                results[entity] = snippet
+                # Extract search snippets using regex
+                snippets = re.findall(r'<a rel="nofollow" class="result__a" href=".*?">(.*?)</a>', response.text)
+                results[entity] = snippets[0] if snippets else "No relevant snippet found"
             else:
                 results[entity] = f"Error: HTTP {response.status_code}"
+            time.sleep(2)  # Delay to avoid being blocked
         except Exception as e:
             logging.error(f"Error during search for {entity}: {e}")
             results[entity] = "Search error"
@@ -64,17 +70,19 @@ def process_with_groq_api(results, groq_api_key):
     headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
 
     for entity, snippet in results.items():
+        if snippet in ["No relevant snippet found", "Search error"]:
+            processed_results[entity] = snippet
+            continue
+
         try:
             # Prepare the messages for the Groq API
             messages = [
                 {"role": "user", "content": f"Extract relevant details about {entity} from this snippet: {snippet}"}
             ]
-            # Use the updated model name
             payload = {
-                "model": "llama3-8b-8192",  # Updated model name
+                "model": "llama3-8b-8192",
                 "messages": messages
             }
-            logging.info(f"Sending payload to Groq API: {payload}")
             response = httpx.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers=headers,
@@ -87,7 +95,7 @@ def process_with_groq_api(results, groq_api_key):
                 processed_results[entity] = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No result extracted.")
             else:
                 logging.error(f"Groq API response for {entity}: {response.status_code}, {response.text}")
-                processed_results[entity] = f"Groq API Error: {response.status_code}, {response.json().get('error', {}).get('message', 'Unknown error')}"
+                processed_results[entity] = f"Groq API Error: {response.status_code}"
         except Exception as e:
             logging.error(f"Groq API error for {entity}: {e}")
             processed_results[entity] = "Processing error"
