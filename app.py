@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import httpx
 import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -96,23 +95,22 @@ if not data.empty:
 
     if st.button("Run Query") and main_column and prompt and rapidapi_key and llm_api_key:
         st.write("Processing...")
-        progress = st.progress(0)
+        
+        # Call batch_process with valid entities
+        results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
 
-        # Ensure that the prompt contains the placeholder
-        if f"{{{main_column}}}" not in prompt:
-            st.error(f"The prompt must contain the placeholder {{{main_column}}}")
-        else:
-            # Call batch_process with valid entities
-            results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
+        # Process with LLM
+        final_results = process_with_llm(results, llm_api_key)
 
-            # Process with LLM
-            final_results = process_with_llm(results, llm_api_key)
+        # Display results
+        st.write("Results:")
+        
+        # Convert results to DataFrame ```python
+        results_df = pd.DataFrame(list(final_results.items()), columns=["Entity", "Extracted Information"])
+        
+        # Display the DataFrame
+        st.dataframe(results_df)
 
-            # Display results
-            st.write("Results:")
-            results_df = pd.DataFrame.from_dict(final_results, orient="index", columns=["Extracted Information"])
-            st.dataframe(results_df)
-
-            # Download results
-            results_csv = results_df.to_csv(index=False).encode("utf-8")
-            st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+        # Download results
+        results_csv = results_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
