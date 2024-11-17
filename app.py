@@ -1,10 +1,9 @@
 import streamlit as st
 import pandas as pd
 import httpx
-import time
+import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import logging
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -44,8 +43,9 @@ def perform_search(entities, prompt):
     results = {}
     for entity in entities:
         try:
-            search_query = prompt.replace("{entity}", str(entity))
+            search_query = prompt.replace("{Company}", str(entity))
             url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
+            logging.info(f"Performing search query: {search_query}")
             response = httpx.get(url, timeout=10)
 
             if response.status_code == 200:
@@ -71,14 +71,15 @@ def process_with_groq_api(results, groq_api_key):
                 "instruction": f"Extract relevant details for {entity}."
             }
             response = httpx.post(
-                "https://api.groq.com/process", 
-                headers=headers, 
-                json=payload, 
+                "https://api.groq.com/v1/process",  # Update to the correct endpoint
+                headers=headers,
+                json=payload,
                 timeout=10
             )
             if response.status_code == 200:
                 processed_results[entity] = response.json().get("result", "No result extracted.")
             else:
+                logging.error(f"Groq API error for {entity}: {response.text}")
                 processed_results[entity] = f"Groq API Error: {response.status_code}"
         except Exception as e:
             logging.error(f"Groq API error for {entity}: {e}")
@@ -120,7 +121,7 @@ if data_source == "Google Sheets":
 # Perform searches and process results
 if not data.empty:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
-    prompt = st.text_input("Enter Query (e.g., Get email for {entity})")
+    prompt = st.text_input("Enter Query (e.g., Get City for {Company})")
     groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
     if st.button("Run Search") and main_column and prompt and groq_api_key:
