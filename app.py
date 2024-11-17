@@ -6,6 +6,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from urllib.parse import quote
 import time
+import math
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -49,8 +50,13 @@ def perform_search(entities, prompt, main_column, rapidapi_key, rate_limit_delay
     }
 
     for entity in entities:
+        if not isinstance(entity, str) or not entity.strip():
+            logging.warning(f"Skipping invalid entity: {entity}")
+            results[entity] = "Invalid entity"
+            continue
+
         try:
-            search_query = quote(prompt.replace(f"{{{main_column}}}", str(entity)))
+            search_query = quote(prompt.replace(f"{{{main_column}}}", entity.strip()))
             url = f"https://google-search3.p.rapidapi.com/api/v1/search/q={search_query}"
             response = httpx.get(url, headers=headers, timeout=10)
 
@@ -81,7 +87,7 @@ def process_with_llm(results, llm_api_key):
     headers = {"Authorization": f"Bearer {llm_api_key}", "Content-Type": "application/json"}
 
     for entity, snippet in results.items():
-        if snippet in ["No relevant snippet found", "Request error", "Unknown error"]:
+        if snippet in ["No relevant snippet found", "Request error", "Unknown error", "Invalid entity"]:
             processed_results[entity] = snippet
             continue
 
@@ -103,6 +109,20 @@ def process_with_llm(results, llm_api_key):
             processed_results[entity] = "Processing error"
 
     return processed_results
+
+# Batch processing for search
+def batch_process(entities, batch_size, prompt, main_column, rapidapi_key, rate_limit_delay=1):
+    results = {}
+    total_batches = math.ceil(len(entities) / batch_size)
+
+    for i in range(total_batches):
+        batch = entities[i * batch_size:(i + 1) * batch_size]
+        batch_results = perform_search(batch, prompt, main_column, rapidapi_key, rate_limit_delay)
+        results.update(batch_results)
+        logging.info(f"Processed batch {i + 1}/{total_batches}")
+        time.sleep(rate_limit_delay * 5)  # Delay between batches
+
+    return results
 
 # Streamlit App
 st.title("AI Agent for Automated Information Retrieval")
@@ -132,21 +152,29 @@ if data_source == "Google Sheets":
 
 if not data.empty:
     main_column = st.selectbox("Select Main Column", data.columns)
-    prompt = st.text_input("Enter Query Template (e.g., Get {main_column} for {Entity})")
+    prompt = st.text_input("Enter Query Template (e.g., Get information about {main_column})")
     rapidapi_key = st.text_input("Enter RapidAPI Key", type="password")
     llm_api_key = st.text_input("Enter LLM API Key", type="password")
+    batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
     if st.button("Run Query") and main_column and prompt and rapidapi_key and llm_api_key:
         st.write("Processing...")
         progress = st.progress(0)
         entities = data[main_column].dropna().tolist()
 
-        search_results = perform_search(entities, prompt, main_column, rapidapi_key)
-        final_results = process_with_llm(search_results, llm_api_key)
+        if f"{{{main_column}}}" not in prompt:
+            st.error(f"The prompt must contain the placeholder {{{main_column}}}")
+        else:
+            results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
 
-        st.write("Results:")
-        results_df = pd.DataFrame.from_dict(final_results, orient="index", columns=["Extracted Information"])
-        st.dataframe(results_df)
+            # Process with LLM
+            final_results = process_with_llm(results, llm_api_key)
 
-        results_csv = results_df.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+            # Display results
+            st.write("Results:")
+            results_df = pd.DataFrame.from_dict(final_results, orient="index", columns=["Extracted Information"])
+            st.dataframe(results_df)
+
+            # Download results
+            results_csv = results_df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
