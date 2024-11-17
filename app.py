@@ -40,7 +40,7 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using StartPage HTML scraping
+# Perform a search using StartPage with redirects handled
 def perform_search(entities, prompt, main_column):
     results = {}
     headers = {
@@ -51,14 +51,14 @@ def perform_search(entities, prompt, main_column):
         try:
             search_query = prompt.replace(f"{{{main_column}}}", str(entity))
             url = f"https://www.startpage.com/sp/search?q={search_query.replace(' ', '+')}"
-            response = httpx.get(url, headers=headers, timeout=10)
+            response = httpx.get(url, headers=headers, timeout=10, follow_redirects=True)
 
             if response.status_code == 200:
-                # Save the response for debugging
+                # Save response for debugging
                 with open(f"debug_{entity}.html", "w", encoding="utf-8") as f:
                     f.write(response.text)
 
-                # Extract search snippets using regex
+                # Extract snippets using regex
                 snippets = re.findall(r'<p class="result__snippet">(.*?)</p>', response.text)
                 results[entity] = snippets[0] if snippets else "No relevant snippet found"
             else:
@@ -69,17 +69,21 @@ def perform_search(entities, prompt, main_column):
             results[entity] = "Search error"
     return results
 
+# Filter valid snippets
+def filter_snippets(results):
+    return {
+        entity: snippet
+        for entity, snippet in results.items()
+        if snippet not in ["No relevant snippet found", "Search error"]
+    }
+
+# Process snippets with Groq API
 def process_with_groq_api(results, groq_api_key):
     processed_results = {}
     headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
 
     for entity, snippet in results.items():
-        if snippet in ["No relevant snippet found", "Search error"]:
-            processed_results[entity] = snippet
-            continue
-
         try:
-            # Prepare the messages for the Groq API
             messages = [
                 {"role": "user", "content": f"Extract relevant details about {entity} from this snippet: {snippet}"}
             ]
@@ -95,10 +99,8 @@ def process_with_groq_api(results, groq_api_key):
             )
 
             if response.status_code == 200:
-                # Parse the response and extract content
                 processed_results[entity] = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No result extracted.")
             else:
-                logging.error(f"Groq API response for {entity}: {response.status_code}, {response.text}")
                 processed_results[entity] = f"Groq API Error: {response.status_code}"
         except Exception as e:
             logging.error(f"Groq API error for {entity}: {e}")
@@ -153,7 +155,8 @@ if not data.empty:
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
             batch_results = perform_search(batch, prompt, main_column)
-            processed_results = process_with_groq_api(batch_results, groq_api_key)
+            valid_snippets = filter_snippets(batch_results)
+            processed_results = process_with_groq_api(valid_snippets, groq_api_key)
             final_results.update(processed_results)
             progress.progress((idx + 1) / total_batches)
 
