@@ -41,7 +41,13 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a web search
+# Validate column data
+if data[main_column].dtype in [int, float]:
+    st.warning(f"The selected column '{main_column}' contains numeric data. Please choose a column with valid strings.")
+    st.stop()
+
+entities = data[main_column].dropna().astype(str).str.strip().tolist()  # Convert to strings
+
 def perform_search(entities, prompt, main_column, rapidapi_key, rate_limit_delay=1):
     results = {}
     headers = {
@@ -50,13 +56,13 @@ def perform_search(entities, prompt, main_column, rapidapi_key, rate_limit_delay
     }
 
     for entity in entities:
-        if not isinstance(entity, str) or not entity.strip():
+        if not entity:
             logging.warning(f"Skipping invalid entity: {entity}")
             results[entity] = "Invalid entity"
             continue
 
         try:
-            search_query = quote(prompt.replace(f"{{{main_column}}}", entity.strip()))
+            search_query = quote(prompt.replace(f"{{{main_column}}}", entity))
             url = f"https://google-search3.p.rapidapi.com/api/v1/search/q={search_query}"
             response = httpx.get(url, headers=headers, timeout=10)
 
@@ -80,6 +86,7 @@ def perform_search(entities, prompt, main_column, rapidapi_key, rate_limit_delay
         time.sleep(rate_limit_delay)
 
     return results
+
 
 # Process snippets with LLM
 def process_with_llm(results, llm_api_key):
