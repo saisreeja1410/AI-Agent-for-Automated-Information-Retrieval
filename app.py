@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 def authenticate_google_sheets(credentials_file):
     try:
         creds = service_account.Credentials.from_service_account_file(
-            credentials_file, 
+            credentials_file,
             scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
         )
         return creds
@@ -39,11 +39,11 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         return pd.DataFrame()
 
 # Perform a search using DuckDuckGo Instant API
-def perform_search(entities, prompt):
+def perform_search(entities, prompt, main_column):
     results = {}
     for entity in entities:
         try:
-            search_query = prompt.replace("{Company}", str(entity))
+            search_query = prompt.replace(f"{{{main_column}}}", str(entity))
             url = f"https://api.duckduckgo.com/?q={search_query}&format=json&pretty=1"
             logging.info(f"Performing search query: {search_query}")
             response = httpx.get(url, timeout=10)
@@ -70,8 +70,9 @@ def process_with_groq_api(results, groq_api_key):
                 "input": snippet,
                 "instruction": f"Extract relevant details for {entity}."
             }
+            logging.info(f"Sending payload to Groq API: {payload}")
             response = httpx.post(
-                "https://api.groq.com/v1/process",  # Update to the correct endpoint
+                "https://api.groq.com/openai/v1/chat/completions",  # Verify this URL
                 headers=headers,
                 json=payload,
                 timeout=10
@@ -79,7 +80,7 @@ def process_with_groq_api(results, groq_api_key):
             if response.status_code == 200:
                 processed_results[entity] = response.json().get("result", "No result extracted.")
             else:
-                logging.error(f"Groq API error for {entity}: {response.text}")
+                logging.error(f"Groq API response for {entity}: {response.status_code}, {response.text}")
                 processed_results[entity] = f"Groq API Error: {response.status_code}"
         except Exception as e:
             logging.error(f"Groq API error for {entity}: {e}")
@@ -121,7 +122,7 @@ if data_source == "Google Sheets":
 # Perform searches and process results
 if not data.empty:
     main_column = st.selectbox("Select Main Column for Entities", data.columns)
-    prompt = st.text_input("Enter Query (e.g., Get City for {Company})")
+    prompt = st.text_input("Enter Query (e.g., Get {main_column} for {Company})")
     groq_api_key = st.text_input("Enter Groq API Key", type="password")
 
     if st.button("Run Search") and main_column and prompt and groq_api_key:
@@ -133,7 +134,7 @@ if not data.empty:
         entities = data[main_column].dropna().tolist()
         total_batches = len(entities)
         for idx, batch in enumerate(batch_data(entities, batch_size=10)):
-            batch_results = perform_search(batch, prompt)
+            batch_results = perform_search(batch, prompt, main_column)
             processed_results = process_with_groq_api(batch_results, groq_api_key)
             final_results.update(processed_results)
             progress.progress((idx + 1) / total_batches)
