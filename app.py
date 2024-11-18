@@ -1,15 +1,13 @@
 import streamlit as st
 import pandas as pd
-import logging
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.llms import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
 
-# Logging setup
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-
-# Function to authenticate Google Sheets
+# Authenticate Google Sheets
 def authenticate_google_sheets(credentials_file):
     try:
         creds = service_account.Credentials.from_service_account_file(credentials_file)
@@ -18,8 +16,6 @@ def authenticate_google_sheets(credentials_file):
         st.error(f"Error authenticating Google Sheets: {e}")
         return None
 
-
-# Function to load data from Google Sheets
 def load_google_sheet(creds, spreadsheet_id, range_name):
     try:
         service = build('sheets', 'v4', credentials=creds)
@@ -34,36 +30,11 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         st.error(f"Error loading Google Sheet: {e}")
         return pd.DataFrame()
 
-
-# Function to batch process entities
-def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
-    results = []
-    for i in range(0, len(entities), batch_size):
-        batch = entities.iloc[i:i + batch_size]  # Use .iloc to get rows
-        for index, entity in batch.iterrows():  # Iterate over rows
-            # Access the main column value
-            main_value = entity[main_column]
-            # Simulated response (replace with actual API call logic)
-            response = f"Processed entity: {main_value}"
-            results.append({"Index": index, "Main Value": main_value, "Response": response})
-        time.sleep(1)  # Simulate a delay for rate limiting
-    return results
-
-
-# Function to process results with LLM
-def process_with_llm(results, llm_api_key):
-    final_results = {}
-    for result in results:
-        # Here you can implement actual logic to generate a final output
-        final_results[result["Index"]] = f"Final output for {result['Index']}: {result['Response']}"
-    return final_results
-
-
 # Streamlit App
-st.title("AI Agent for Automated Information Retrieval")
+st.title("AI Agent with LangChain")
 
 data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
-data = pd.DataFrame()  # Initialize an empty DataFrame
+data = pd.DataFrame()
 
 # Handle CSV Upload
 if data_source == "Upload CSV":
@@ -85,38 +56,46 @@ if data_source == "Google Sheets":
             st.write("Google Sheets Data Preview:")
             st.dataframe(data)
 
-# Only proceed if data is loaded
+# Ensure data is loaded
 if not data.empty:
     main_column = st.selectbox("Select Main Column", data.columns)
-    prompt = st.text_input("Enter Query Template (e.g., Get information about {main_column})")
-    rapidapi_key = st.text_input("Enter RapidAPI Key", type="password")
-    llm_api_key = st.text_input("Enter LLM API Key", type="password")
+    query_template = st.text_input("Enter Query Template (e.g., Get information about {main_column})")
+    openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
     batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
-    # Validate the selected column
     if main_column not in data.columns:
         st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
         st.stop()
 
-    # Prepare entities as a DataFrame
     entities = data[[main_column]].dropna()
 
     if st.button("Run Query"):
-        st.write("Processing...")
+        st.write("Processing with LangChain...")
 
-        # Call batch_process with valid DataFrame
-        results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
+        # Initialize LangChain
+        llm = OpenAI(openai_api_key=openai_api_key)
+        prompt = PromptTemplate(
+            input_variables=["main_value"],
+            template=query_template
+        )
+        chain = LLMChain(llm=llm, prompt=prompt)
 
-        # Process with LLM
-        final_results = process_with_llm(results, llm_api_key)
+        # Process entities in batches
+        results = []
+        for i in range(0, len(entities), batch_size):
+            batch = entities.iloc[i:i + batch_size]
+            for _, row in batch.iterrows():
+                main_value = row[main_column]
+                query = chain.run(main_value=main_value)
+                results.append({"Main Value": main_value, "Response": query})
 
-        # Convert results to DataFrame
-        results_df = pd.DataFrame(list(final_results.items()), columns=["Entity Index", "Extracted Information"])
+            time.sleep(1)  # Simulate rate-limiting
 
-        # Display the results
+        # Display results
+        results_df = pd.DataFrame(results)
         st.write("Results:")
         st.dataframe(results_df)
 
-        # Allow downloading results as a CSV
+        # Download results
         results_csv = results_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
