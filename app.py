@@ -1,12 +1,13 @@
 import streamlit as st
 import pandas as pd
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
-from langchain.llms import OpenAI
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
 from io import BytesIO
+
 
 # Authenticate Google Sheets
 def authenticate_google_sheets(credentials_file):
