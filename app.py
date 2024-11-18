@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import OpenAI
+from langchain_openai.chat_models.base import ChatOpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
