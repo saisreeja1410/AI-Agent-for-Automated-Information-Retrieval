@@ -8,6 +8,7 @@ import time
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+
 # Function to authenticate Google Sheets
 def authenticate_google_sheets(credentials_file):
     try:
@@ -16,6 +17,7 @@ def authenticate_google_sheets(credentials_file):
     except Exception as e:
         st.error(f"Error authenticating Google Sheets: {e}")
         return None
+
 
 # Function to load data from Google Sheets
 def load_google_sheet(creds, spreadsheet_id, range_name):
@@ -33,24 +35,29 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         return pd.DataFrame()
 
 
+# Function to batch process entities
 def batch_process(entities, batch_size, prompt, main_column, rapidapi_key):
     results = []
     for i in range(0, len(entities), batch_size):
         batch = entities.iloc[i:i + batch_size]  # Use .iloc to get rows
         for index, entity in batch.iterrows():  # Iterate over rows
-            # Access the columns directly
-            city = entity['City']  # Adjust this based on your DataFrame structure
-            response = f"City for Index {entity['Index']} is {city}."
-            results.append({"entity": entity, "response": response})
+            # Access the main column value
+            main_value = entity[main_column]
+            # Simulated response (replace with actual API call logic)
+            response = f"Processed entity: {main_value}"
+            results.append({"Index": index, "Main Value": main_value, "Response": response})
         time.sleep(1)  # Simulate a delay for rate limiting
     return results
+
+
 # Function to process results with LLM
 def process_with_llm(results, llm_api_key):
     final_results = {}
     for result in results:
         # Here you can implement actual logic to generate a final output
-        final_results[result["entity"]['Index']] = f"Final output for {result['entity']['Index']}: {result['response']}"
+        final_results[result["Index"]] = f"Final output for {result['Index']}: {result['Response']}"
     return final_results
+
 
 # Streamlit App
 st.title("AI Agent for Automated Information Retrieval")
@@ -91,27 +98,25 @@ if not data.empty:
         st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
         st.stop()
 
-    # Convert to strings and drop NaN values
-    entities = data[main_column].dropna().astype(str).tolist()
+    # Prepare entities as a DataFrame
+    entities = data[[main_column]].dropna()
 
-    if st.button("Run Query") and main_column and prompt and rapidapi_key and llm_api_key:
+    if st.button("Run Query"):
         st.write("Processing...")
-        
-        # Call batch_process with valid entities
+
+        # Call batch_process with valid DataFrame
         results = batch_process(entities, batch_size, prompt, main_column, rapidapi_key)
 
         # Process with LLM
         final_results = process_with_llm(results, llm_api_key)
 
-        # Display results
+        # Convert results to DataFrame
+        results_df = pd.DataFrame(list(final_results.items()), columns=["Entity Index", "Extracted Information"])
+
+        # Display the results
         st.write("Results:")
-        
-        # Convert results to DataFrame ```python
-        results_df = pd.DataFrame(list(final_results.items()), columns=["Entity", "Extracted Information"])
-        
-        # Display the DataFrame
         st.dataframe(results_df)
 
-        # Download results
+        # Allow downloading results as a CSV
         results_csv = results_df.to_csv(index=False).encode("utf-8")
         st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
