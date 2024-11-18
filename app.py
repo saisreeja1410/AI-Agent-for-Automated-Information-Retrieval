@@ -39,6 +39,7 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
+# Perform searches using RapidAPI
 def perform_search(entities, prompt, main_column, rapidapi_key):
     results = {}
     headers = {
@@ -50,18 +51,18 @@ def perform_search(entities, prompt, main_column, rapidapi_key):
         search_query = prompt.replace(f"{{{main_column}}}", str(entity))
         url = f"https://google-search3.p.rapidapi.com/api/v1/search?q={search_query}"
 
-        for attempt in range(3):  # Retry mechanism
+        for attempt in range(3):  # Retry mechanism with exponential backoff
             try:
                 response = httpx.get(url, headers=headers, timeout=10)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    snippets = [result["description"] for result in data.get("results", [])]
+                    snippets = [result.get("description", "") for result in data.get("results", [])]
                     results[entity] = snippets[0] if snippets else "No relevant snippet found"
                     break
                 elif response.status_code == 429:
-                    logging.warning(f"Rate limit hit, retrying after a delay for {entity}")
-                    time.sleep(2 ** attempt)  # Exponential backoff
+                    logging.warning(f"Rate limit hit, retrying after {2 ** attempt} seconds for {entity}")
+                    time.sleep(2 ** attempt)
                 else:
                     results[entity] = f"Error: HTTP {response.status_code}"
                     break
@@ -151,7 +152,7 @@ if not data.empty:
             batch_results = perform_search(batch, prompt, main_column, rapidapi_key)
             processed_results = process_with_groq_api(batch_results, groq_api_key)
             final_results.update(processed_results)
-            progress.progress((idx + 1) / total_batches)
+            progress.progress(min((idx + 1) / total_batches, 1.0))
 
         # Display results
         st.subheader("Processed Results")
