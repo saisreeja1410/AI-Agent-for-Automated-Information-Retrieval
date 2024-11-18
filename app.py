@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
-from langchain_openai import ChatOpenAI  # Updated import
-from langchain.prompts import PromptTemplate
-from langchain.chains import LLMChain
+import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
 
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Authenticate Google Sheets
+
+# Function to authenticate Google Sheets
 def authenticate_google_sheets(credentials_file):
     try:
         creds = service_account.Credentials.from_service_account_file(credentials_file)
@@ -18,6 +19,7 @@ def authenticate_google_sheets(credentials_file):
         return None
 
 
+# Function to load data from Google Sheets
 def load_google_sheet(creds, spreadsheet_id, range_name):
     try:
         service = build('sheets', 'v4', credentials=creds)
@@ -33,11 +35,30 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         return pd.DataFrame()
 
 
+# Function to batch process entities
+def batch_process(entities, batch_size, prompt, main_column):
+    results = []
+    for i in range(0, len(entities), batch_size):
+        batch = entities.iloc[i:i + batch_size]  # Use .iloc to get rows
+        for index, entity in batch.iterrows():  # Iterate over rows
+            # Replace placeholder in prompt with actual value
+            main_value = entity[main_column]
+            query = prompt.replace("{main_column}", str(main_value))
+            
+            # Simulate response (replace this logic with actual API call if needed)
+            response = f"Query: {query} - Response: Retrieved information about {main_value}"
+            results.append({"Index": index, "Main Value": main_value, "Response": response})
+        
+        # Simulate rate-limiting delay
+        time.sleep(1)
+    return results
+
+
 # Streamlit App
-st.title("AI Agent with LangChain")
+st.title("AI Agent for Automated Information Retrieval")
 
 data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
-data = pd.DataFrame()
+data = pd.DataFrame()  # Initialize an empty DataFrame
 
 # Handle CSV Upload
 if data_source == "Upload CSV":
@@ -53,68 +74,47 @@ if data_source == "Google Sheets":
     spreadsheet_id = st.text_input("Enter Google Sheet ID")
     range_name = st.text_input("Enter Data Range (e.g., 'Sheet1!A1:D100')")
     if credentials_file and spreadsheet_id and range_name:
-        creds = authenticate_google_sheets(credentials_file.read())
+        creds = authenticate_google_sheets(credentials_file)
         if creds:
             data = load_google_sheet(creds, spreadsheet_id, range_name)
             st.write("Google Sheets Data Preview:")
             st.dataframe(data)
 
-# Ensure data is loaded
+# Only proceed if data is loaded
 if not data.empty:
     main_column = st.selectbox("Select Main Column", data.columns)
-    query_template = st.text_input("Enter Query Template (e.g., Get information about {main_value})")
-    openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
+    prompt = st.text_input("Enter Query Template (e.g., Get information about {main_column})")
     batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
-    if not openai_api_key:
-        st.error("Please enter a valid OpenAI API Key.")
-        st.stop()
-
+    # Validate the selected column
     if main_column not in data.columns:
         st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
         st.stop()
 
-    if "{main_value}" not in query_template:
-        st.error("Query template must contain the placeholder '{main_value}'.")
-        st.stop()
-
+    # Prepare entities as a DataFrame
     entities = data[[main_column]].dropna()
 
     if st.button("Run Query"):
-        st.write("Processing with LangChain...")
+        st.write("Processing...")
 
-        # Initialize LangChain
-        llm = ChatOpenAI(
-            model="gpt-4",
-            temperature=0,
-            api_key=openai_api_key  # Updated parameter name
-        )
-        prompt = PromptTemplate(
-            input_variables=["main_value"],
-            template=query_template
-        )
-        chain = LLMChain(llm=llm, prompt=prompt)
+        # Debug: Display intermediate data
+        st.write("Entities for processing:")
+        st.dataframe(entities)
 
-        # Process entities in batches
-        results = []
-        with st.spinner("Processing..."):
-            for i in range(0, len(entities), batch_size):
-                batch = entities.iloc[i:i + batch_size]
-                for _, row in batch.iterrows():
-                    main_value = row[main_column]
-                    query = chain.run(main_value=main_value)  # Updated to use keyword argument
-                    results.append({"Main Value": main_value, "Response": query})
+        # Call batch_process with valid DataFrame
+        results = batch_process(entities, batch_size, prompt, main_column)
 
-                time.sleep(1)  # Rate limiting
-
-        # Display results
+        # Convert results to DataFrame
         results_df = pd.DataFrame(results)
-        if not results_df.empty:
-            st.write("Results:")
-            st.dataframe(results_df)
 
-            # Download results
-            results_csv = results_df.to_csv(index=False).encode("utf-8")
-            st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
-        else:
-            st.warning("No results were generated.")
+        # Debug: Display raw results
+        st.write("Raw Results:")
+        st.dataframe(results_df)
+
+        # Display final results
+        st.write("Final Processed Results:")
+        st.dataframe(results_df)
+
+        # Allow downloading results as a CSV
+        results_csv = results_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
