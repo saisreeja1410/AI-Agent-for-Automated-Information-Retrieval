@@ -1,84 +1,105 @@
-import os
-import pandas as pd
 import streamlit as st
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from groqapi import GroqClient
-from serpapi import GoogleSearch
-from io import StringIO
-import time
+import pandas as pd
+from data_handler import load_csv, load_google_sheet
+from search_api import search_entity
+from llm_integration import extract_info
+import utils
 
-# Constants
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
+st.title("AI Agent Information Retrieval")
 
-# Initialize APIs
-groq_client = GroqClient(api_key=GROQ_API_KEY)
+# Step 1: File Upload
+st.header("Upload Data")
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
-# App title
-st.title("AI-Powered Data Retrieval Dashboard")
+# Step 2: Google Sheets Integration
+google_sheet_url = st.text_input("Or, Enter Google Sheet URL")
 
-# Step 1: File upload or Google Sheets integration
-st.sidebar.header("Step 1: Upload Data")
-upload_option = st.sidebar.radio("Choose data source:", ["Upload CSV", "Connect Google Sheet"])
+if uploaded_file:
+    df = load_csv(uploaded_file)
+elif google_sheet_url:
+    df = load_google_sheet(google_sheet_url)
+else:
+    df = None
 
-if upload_option == "Upload CSV":
-    uploaded_file = st.sidebar.file_uploader("Upload your CSV file", type=["csv"])
-    if uploaded_file:
-        data = pd.read_csv(uploaded_file)
-elif upload_option == "Connect Google Sheet":
-    google_sheet_url = st.sidebar.text_input("Enter Google Sheet URL:")
-    if google_sheet_url:
-        credentials = service_account.Credentials.from_service_account_info(GOOGLE_CREDENTIALS_JSON)
-        service = build('sheets', 'v4', credentials=credentials)
-        sheet_id = google_sheet_url.split("/")[5]
-        sheet_name = "Sheet1"
-        result = service.spreadsheets().values().get(spreadsheetId=sheet_id, range=sheet_name).execute()
-        values = result.get('values', [])
-        data = pd.DataFrame(values[1:], columns=values[0])
+if df is not None:
+    st.write("Preview of the Data")
+    st.dataframe(df.head())
 
-if 'data' in locals():
-    st.write("Preview of uploaded data:")
-    st.write(data.head())
-    column = st.selectbox("Select the column to use for queries:", data.columns)
+    # Step 3: Selecting Column
+    entity_column = st.selectbox("Select the main column (e.g., Company)", df.columns)
+    
+    # Step 4: Custom Query Input
+    query_template = st.text_input(
+        "Enter your query (use {entity} as a placeholder)", 
+        "Get the email address of {entity}"
+    )
 
-# Step 2: Query prompt input
-st.sidebar.header("Step 2: Define Query")
-prompt_template = st.sidebar.text_input("Enter prompt template (e.g., 'Find the email of {company}'):")
-
-# Step 3: Execute retrieval
-if st.sidebar.button("Start Retrieval") and 'data' in locals() and column and prompt_template:
-    results = []
-    for entity in data[column]:
-        # Dynamic prompt creation
-        query = prompt_template.format(company=entity)
+    if st.button("Run AI Agent"):
+        results = []
+        for entity in df[entity_column].dropna():
+            query = query_template.format(entity=entity)
+            search_results = search_entity(query)
+            extracted_data = extract_info(query, search_results)
+            results.append({"Entity": entity, "Extracted Data": extracted_data})
         
-        # Search the web
-        search = GoogleSearch({"q": query, "api_key": SERPAPI_KEY})
-        search_results = search.get_dict()
-        top_results = search_results.get("organic_results", [])
+        results_df = pd.DataFrame(results)
+        st.write("Results")
+        st.dataframe(results_df)
 
-        # Format input for LLM
-        formatted_results = "\n".join([result.get("snippet", "") for result in top_results])
-        llm_input = f"Extract information for: {query}. Results: {formatted_results}"
-        
-        # Call Groq API
-        try:
-            groq_response = groq_client.completion(prompt=llm_input)
-            extracted_info = groq_response.get('text', "No information found")
-        except Exception as e:
-            extracted_info = f"Error: {str(e)}"
-        
-        # Append to results
-        results.append({"Entity": entity, "Extracted Info": extracted_info})
-        time.sleep(1)  # Avoid rate-limiting
+        # Step 5: Download Option
+        st.download_button(
+            label="Download CSV",
+            data=results_df.to_csv(index=False),
+            file_name="extracted_results.csv",
+            mime="text/csv"
+        )
+else:
+    st.info("Please upload a CSV file or connect a Google Sheet.")
+import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 
-    # Display results
-    results_df = pd.DataFrame(results)
-    st.write("Results:")
-    st.dataframe(results_df)
+def load_csv(uploaded_file):
+    return pd.read_csv(uploaded_file)
 
-    # Step 4: Export options
-    csv = results_df.to_csv(index=False)
-    st.download_button("Download Results as CSV", data=csv, file_name="results.csv", mime="text/csv")
+def load_google_sheet(sheet_url):
+    creds = Credentials.from_service_account_file('credentials.json')
+    client = gspread.authorize(creds)
+    sheet = client.open_by_url(sheet_url).sheet1
+    data = sheet.get_all_records()
+    return pd.DataFrame(data)
+import requests
+import os
+
+SERPAPI_KEY = os.getenv('SERPAPI_KEY')
+
+def search_entity(query):
+    search_url = "https://serpapi.com/search"
+    params = {
+        'q': query,
+        'api_key': SERPAPI_KEY,
+        'num': 3,  # Get top 3 results
+    }
+    response = requests.get(search_url, params=params)
+    if response.status_code == 200:
+        return response.json().get('organic_results', [])
+    return []
+import openai
+import os
+
+openai.api_key = os.getenv('OPENAI_API_KEY')
+
+def extract_info(query, search_results):
+    content = "\n".join([result['snippet'] for result in search_results if 'snippet' in result])
+    prompt = f"Extract the relevant information for: {query}\n\n{content}"
+    
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return response.choices[0].message['content'].strip()
+    except Exception as e:
+        return f"Error: {str(e)}"
+def format_prompt(prompt, entity):
+    return prompt.replace("{entity}", entity)
