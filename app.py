@@ -1,12 +1,11 @@
 import streamlit as st
 import pandas as pd
+from langchain_openai import ChatOpenAI, OpenAI  # Correct imports
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
-from langchain.chat_models import ChatOpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
-from io import BytesIO
 
 
 # Authenticate Google Sheets
@@ -85,7 +84,7 @@ if not data.empty:
         st.write("Processing with LangChain...")
 
         # Initialize LangChain
-        llm = ChatOpenAI(openai_api_key=openai_api_key)
+        llm = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=openai_api_key)
         prompt = PromptTemplate(
             input_variables=["main_value"],
             template=query_template
