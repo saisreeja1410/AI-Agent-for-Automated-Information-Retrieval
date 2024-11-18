@@ -84,4 +84,33 @@ if not data.empty:
         st.write("Processing with LangChain...")
 
         # Initialize LangChain
-        llm = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=openai
+        llm = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=openai)
+        prompt = PromptTemplate(
+            input_variables=["main_value"],
+            template=query_template
+        )
+        chain = LLMChain(llm=llm, prompt=prompt)
+
+        # Process entities in batches
+        results = []
+        with st.spinner("Processing..."):
+            for i in range(0, len(entities), batch_size):
+                batch = entities.iloc[i:i + batch_size]
+                for _, row in batch.iterrows():
+                    main_value = row[main_column]
+                    query = chain.run({"main_value": main_value})
+                    results.append({"Main Value": main_value, "Response": query})
+
+                time.sleep(1)  # Simulate rate-limiting
+
+        # Display results
+        results_df = pd.DataFrame(results)
+        if not results_df.empty:
+            st.write("Results:")
+            st.dataframe(results_df)
+
+            # Download results
+            results_csv = results_df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+        else:
+            st.warning("No results were generated.")
