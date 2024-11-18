@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_openai.chat_models.base import ChatOpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+from langchain.chat_models import ChatOpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
@@ -18,6 +18,7 @@ def authenticate_google_sheets(credentials_file):
         st.error(f"Error authenticating Google Sheets: {e}")
         return None
 
+
 def load_google_sheet(creds, spreadsheet_id, range_name):
     try:
         service = build('sheets', 'v4', credentials=creds)
@@ -31,6 +32,7 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
     except Exception as e:
         st.error(f"Error loading Google Sheet: {e}")
         return pd.DataFrame()
+
 
 # Streamlit App
 st.title("AI Agent with LangChain")
@@ -61,7 +63,7 @@ if data_source == "Google Sheets":
 # Ensure data is loaded
 if not data.empty:
     main_column = st.selectbox("Select Main Column", data.columns)
-    query_template = st.text_input("Enter Query Template (e.g., Get information about {main_column})")
+    query_template = st.text_input("Enter Query Template (e.g., Get information about {main_value})")
     openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
     batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
@@ -83,7 +85,7 @@ if not data.empty:
         st.write("Processing with LangChain...")
 
         # Initialize LangChain
-        llm = OpenAI(openai_api_key=openai_api_key)
+        llm = ChatOpenAI(openai_api_key=openai_api_key)
         prompt = PromptTemplate(
             input_variables=["main_value"],
             template=query_template
@@ -97,7 +99,7 @@ if not data.empty:
                 batch = entities.iloc[i:i + batch_size]
                 for _, row in batch.iterrows():
                     main_value = row[main_column]
-                    query = chain.run(main_value=main_value)
+                    query = chain.run({"main_value": main_value})
                     results.append({"Main Value": main_value, "Response": query})
 
                 time.sleep(1)  # Simulate rate-limiting
