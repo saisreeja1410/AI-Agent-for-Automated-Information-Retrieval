@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from langchain.chat_models import ChatOpenAI  # Corrected imports
+from langchain_openai import ChatOpenAI  # Updated import
 from langchain.prompts import PromptTemplate
 from langchain.chains import LLMChain
 from google.oauth2 import service_account
@@ -84,7 +84,11 @@ if not data.empty:
         st.write("Processing with LangChain...")
 
         # Initialize LangChain
-        llm = ChatOpenAI(model="gpt-4", temperature=0, openai_api_key=openai)
+        llm = ChatOpenAI(
+            model="gpt-4",
+            temperature=0,
+            api_key=openai_api_key  # Updated parameter name
+        )
         prompt = PromptTemplate(
             input_variables=["main_value"],
             template=query_template
@@ -98,10 +102,10 @@ if not data.empty:
                 batch = entities.iloc[i:i + batch_size]
                 for _, row in batch.iterrows():
                     main_value = row[main_column]
-                    query = chain.run({"main_value": main_value})
+                    query = chain.run(main_value=main_value)  # Updated to use keyword argument
                     results.append({"Main Value": main_value, "Response": query})
 
-                time.sleep(1)  # Simulate rate-limiting
+                time.sleep(1)  # Rate limiting
 
         # Display results
         results_df = pd.DataFrame(results)
