@@ -8,3 +8,5 @@ google-api-python-client
 requests
 langchain
 serpapi  
+httpx
+
