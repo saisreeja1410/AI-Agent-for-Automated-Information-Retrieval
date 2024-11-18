@@ -1,125 +1,157 @@
-import os
-import openai
-import pandas as pd
-import requests
 import streamlit as st
-from google.oauth2.service_account import Credentials
-import gspread
-from dotenv import load_dotenv
+import pandas as pd
+import httpx
+import logging
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+import time
 
-# Load environment variables
-load_dotenv()
+# Logging setup
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Set API Keys
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-SERPAPI_KEY = os.getenv('SERPAPI_KEY')
-GOOGLE_SHEET_CREDENTIALS = os.getenv('GOOGLE_SHEET_CREDENTIALS')
-
-# Set up OpenAI
-openai.api_key = OPENAI_API_KEY
-
-# Streamlit App
-st.title("AI Agent Information Retrieval")
-
-# Function to load CSV file
-def load_csv(uploaded_file):
+# Authenticate Google Sheets API
+@st.cache_resource
+def authenticate_google_sheets(credentials_file):
     try:
-        return pd.read_csv(uploaded_file)
+        creds = service_account.Credentials.from_service_account_file(
+            credentials_file,
+            scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+        )
+        return creds
     except Exception as e:
-        st.error(f"Error reading CSV: {e}")
+        st.error("Google Sheets authentication failed. Please check the credentials file.")
+        logging.error(f"Google Sheets authentication error: {e}")
         return None
 
-# Function to load Google Sheets
-def load_google_sheet(sheet_url):
+# Load data from Google Sheets
+def load_google_sheet(creds, spreadsheet_id, range_name):
     try:
-        creds = Credentials.from_service_account_file('credentials.json')
-        client = gspread.authorize(creds)
-        sheet = client.open_by_url(sheet_url).sheet1
-        data = sheet.get_all_records()
-        return pd.DataFrame(data)
+        service = build('sheets', 'v4', credentials=creds)
+        sheet = service.spreadsheets()
+        result = sheet.values().get(spreadsheetId=spreadsheet_id, range=range_name).execute()
+        values = result.get('values', [])
+        if not values:
+            st.warning("No data found in the specified range.")
+            return pd.DataFrame()
+        return pd.DataFrame(values[1:], columns=values[0])
     except Exception as e:
-        st.error(f"Error connecting to Google Sheet: {e}")
-        return None
+        st.error("Failed to load Google Sheets data. Check the Spreadsheet ID and range.")
+        logging.error(f"Error loading Google Sheets: {e}")
+        return pd.DataFrame()
 
-# Function to perform a web search using SerpAPI
-def search_entity(query):
-    try:
-        search_url = "https://serpapi.com/search"
-        params = {
-            'q': query,
-            'api_key': SERPAPI_KEY,
-            'num': 3,  # Top 3 search results
-        }
-        response = requests.get(search_url, params=params)
-        if response.status_code == 200:
-            return response.json().get('organic_results', [])
-        else:
-            st.warning("Failed to fetch data from SerpAPI")
-            return []
-    except Exception as e:
-        st.error(f"Error during web search: {e}")
-        return []
+# Perform a search using Google API Unlimited (via RapidAPI)
+def perform_search(entities, prompt, main_column, rapidapi_key):
+    results = {}
+    headers = {
+        "X-RapidAPI-Host": "google-search3.p.rapidapi.com",
+        "X-RapidAPI-Key": rapidapi_key,
+    }
 
-# Function to extract specific information using OpenAI GPT
-def extract_info(query, search_results):
-    content = "\n".join([result['snippet'] for result in search_results if 'snippet' in result])
-    prompt = f"Extract the relevant information for: {query}\n\n{content}"
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message['content'].strip()
-    except Exception as e:
-        return f"Error: {str(e)}"
+    for entity in entities:
+        try:
+            search_query = prompt.replace(f"{{{main_column}}}", str(entity))
+            url = f"https://google-search3.p.rapidapi.com/api/v1/search/q={search_query}"
+            response = httpx.get(url, headers=headers, timeout=10)
 
-# Step 1: File Upload
-st.header("Upload Data")
-uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+            if response.status_code == 200:
+                data = response.json()
+                snippets = [result["description"] for result in data.get("results", [])]
+                results[entity] = snippets[0] if snippets else "No relevant snippet found"
+            else:
+                results[entity] = f"Error: HTTP {response.status_code}"
+        except Exception as e:
+            logging.error(f"Error during search for {entity}: {e}")
+            results[entity] = "Search error"
+    return results
 
-# Step 2: Google Sheets Integration
-google_sheet_url = st.text_input("Or, Enter Google Sheet URL")
+# Process snippets with Groq API
+def process_with_groq_api(results, groq_api_key):
+    processed_results = {}
+    headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
 
-# Load Data
-if uploaded_file:
-    df = load_csv(uploaded_file)
-elif google_sheet_url:
-    df = load_google_sheet(google_sheet_url)
-else:
-    df = None
+    for entity, snippet in results.items():
+        if snippet in ["No relevant snippet found", "Search error"]:
+            processed_results[entity] = snippet
+            continue
 
-# Display Data Preview
-if df is not None:
-    st.write("Preview of the Data")
-    st.dataframe(df.head())
+        try:
+            messages = [
+                {"role": "user", "content": f"Extract relevant details about {entity} from this snippet: {snippet}"}
+            ]
+            payload = {"model": "llama3-8b-8192", "messages": messages}
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
 
-    # Step 3: Selecting Column
-    entity_column = st.selectbox("Select the main column (e.g., Company)", df.columns)
-    
-    # Step 4: Custom Query Input
-    query_template = st.text_input(
-        "Enter your query (use {entity} as a placeholder)", 
-        "Get the email address of {entity}"
-    )
+            if response.status_code == 200:
+                processed_results[entity] = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No result extracted.")
+            else:
+                processed_results[entity] = f"Groq API Error: {response.status_code}"
+        except Exception as e:
+            logging.error(f"Groq API error for {entity}: {e}")
+            processed_results[entity] = "Processing error"
+    return processed_results
 
-    if st.button("Run AI Agent"):
-        results = []
-        for entity in df[entity_column].dropna():
-            query = query_template.format(entity=entity)
-            search_results = search_entity(query)
-            extracted_data = extract_info(query, search_results)
-            results.append({"Entity": entity, "Extracted Data": extracted_data})
-        
-        results_df = pd.DataFrame(results)
-        st.write("Results")
-        st.dataframe(results_df)
+# Batch data processing
+def batch_data(data, batch_size):
+    for i in range(0, len(data), batch_size):
+        yield data[i:i + batch_size]
 
-        # Step 5: Download Option
-        st.download_button(
-            label="Download CSV",
-            data=results_df.to_csv(index=False),
-            file_name="extracted_results.csv",
-            mime="text/csv"
-        )
-else:
-    st.info("Please upload a CSV file or connect a Google Sheet.")
+# Streamlit app
+st.title("AI Agent for Automated Information Retrieval")
+
+data_source = st.radio("Choose Data Source", ["Upload CSV", "Google Sheets"])
+data = pd.DataFrame()
+
+# Handle CSV upload
+if data_source == "Upload CSV":
+    uploaded_file = st.file_uploader("Upload a CSV File", type=["csv"])
+    if uploaded_file:
+        data = pd.read_csv(uploaded_file)
+        st.write("Uploaded Data Preview:")
+        st.dataframe(data)
+
+# Handle Google Sheets integration
+if data_source == "Google Sheets":
+    credentials_file = st.file_uploader("Upload Google Credentials JSON File", type=["json"])
+    spreadsheet_id = st.text_input("Enter Google Sheet ID")
+    range_name = st.text_input("Enter Data Range (e.g., 'Sheet1!A1:D100')")
+    if credentials_file and spreadsheet_id and range_name:
+        creds = authenticate_google_sheets(credentials_file)
+        if creds:
+            data = load_google_sheet(creds, spreadsheet_id, range_name)
+            st.write("Google Sheets Data Preview:")
+            st.dataframe(data)
+
+# Perform searches and process results
+if not data.empty:
+    main_column = st.selectbox("Select Main Column for Entities", data.columns)
+    prompt = st.text_input("Enter Query (e.g., Get {main_column} for {Company})")
+    rapidapi_key = st.text_input("Enter RapidAPI Key", type="password")
+    groq_api_key = st.text_input("Enter Groq API Key", type="password")
+
+    if st.button("Run Search") and main_column and prompt and rapidapi_key:
+        st.write("Processing Data...")
+        progress = st.progress(0)
+        final_results = {}
+
+        # Perform search in batches
+        entities = data[main_column].dropna().tolist()
+        total_batches = len(entities)
+        for idx, batch in enumerate(batch_data(entities, batch_size=10)):
+            batch_results = perform_search(batch, prompt, main_column, rapidapi_key)
+            processed_results = process_with_groq_api(batch_results, groq_api_key)
+            final_results.update(processed_results)
+            progress.progress((idx + 1) / total_batches)
+
+        # Display results
+        st.subheader("Processed Results")
+        results_df = pd.DataFrame.from_dict(final_results, orient='index', columns=['Extracted Information'])
+        st.write(results_df)
+
+        # Download results
+        results_csv = results_df.to_csv().encode('utf-8')
+        st.download_button("Download Results as CSV", results_csv, "processed_results.csv", "text/csv")
