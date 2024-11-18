@@ -6,6 +6,7 @@ from langchain.llms import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import time
+from io import BytesIO
 
 # Authenticate Google Sheets
 def authenticate_google_sheets(credentials_file):
@@ -50,7 +51,7 @@ if data_source == "Google Sheets":
     spreadsheet_id = st.text_input("Enter Google Sheet ID")
     range_name = st.text_input("Enter Data Range (e.g., 'Sheet1!A1:D100')")
     if credentials_file and spreadsheet_id and range_name:
-        creds = authenticate_google_sheets(credentials_file)
+        creds = authenticate_google_sheets(credentials_file.read())
         if creds:
             data = load_google_sheet(creds, spreadsheet_id, range_name)
             st.write("Google Sheets Data Preview:")
@@ -63,8 +64,16 @@ if not data.empty:
     openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
     batch_size = st.slider("Batch Size for Processing", 1, 20, 10)
 
+    if not openai_api_key:
+        st.error("Please enter a valid OpenAI API Key.")
+        st.stop()
+
     if main_column not in data.columns:
         st.error(f"Column '{main_column}' does not exist in the data. Please select a valid column.")
+        st.stop()
+
+    if "{main_value}" not in query_template:
+        st.error("Query template must contain the placeholder '{main_value}'.")
         st.stop()
 
     entities = data[[main_column]].dropna()
@@ -82,20 +91,24 @@ if not data.empty:
 
         # Process entities in batches
         results = []
-        for i in range(0, len(entities), batch_size):
-            batch = entities.iloc[i:i + batch_size]
-            for _, row in batch.iterrows():
-                main_value = row[main_column]
-                query = chain.run(main_value=main_value)
-                results.append({"Main Value": main_value, "Response": query})
+        with st.spinner("Processing..."):
+            for i in range(0, len(entities), batch_size):
+                batch = entities.iloc[i:i + batch_size]
+                for _, row in batch.iterrows():
+                    main_value = row[main_column]
+                    query = chain.run(main_value=main_value)
+                    results.append({"Main Value": main_value, "Response": query})
 
-            time.sleep(1)  # Simulate rate-limiting
+                time.sleep(1)  # Simulate rate-limiting
 
         # Display results
         results_df = pd.DataFrame(results)
-        st.write("Results:")
-        st.dataframe(results_df)
+        if not results_df.empty:
+            st.write("Results:")
+            st.dataframe(results_df)
 
-        # Download results
-        results_csv = results_df.to_csv(index=False).encode("utf-8")
-        st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+            # Download results
+            results_csv = results_df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Results as CSV", results_csv, "results.csv", "text/csv")
+        else:
+            st.warning("No results were generated.")
