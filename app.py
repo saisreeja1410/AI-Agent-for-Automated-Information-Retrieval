@@ -39,7 +39,6 @@ def load_google_sheet(creds, spreadsheet_id, range_name):
         logging.error(f"Error loading Google Sheets: {e}")
         return pd.DataFrame()
 
-# Perform a search using Google API Unlimited (via RapidAPI)
 def perform_search(entities, prompt, main_column, rapidapi_key):
     results = {}
     headers = {
@@ -48,20 +47,27 @@ def perform_search(entities, prompt, main_column, rapidapi_key):
     }
 
     for entity in entities:
-        try:
-            search_query = prompt.replace(f"{{{main_column}}}", str(entity))
-            url = f"https://google-search3.p.rapidapi.com/api/v1/search/q={search_query}"
-            response = httpx.get(url, headers=headers, timeout=10)
+        search_query = prompt.replace(f"{{{main_column}}}", str(entity))
+        url = f"https://google-search3.p.rapidapi.com/api/v1/search?q={search_query}"
 
-            if response.status_code == 200:
-                data = response.json()
-                snippets = [result["description"] for result in data.get("results", [])]
-                results[entity] = snippets[0] if snippets else "No relevant snippet found"
-            else:
-                results[entity] = f"Error: HTTP {response.status_code}"
-        except Exception as e:
-            logging.error(f"Error during search for {entity}: {e}")
-            results[entity] = "Search error"
+        for attempt in range(3):  # Retry mechanism
+            try:
+                response = httpx.get(url, headers=headers, timeout=10)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    snippets = [result["description"] for result in data.get("results", [])]
+                    results[entity] = snippets[0] if snippets else "No relevant snippet found"
+                    break
+                elif response.status_code == 429:
+                    logging.warning(f"Rate limit hit, retrying after a delay for {entity}")
+                    time.sleep(2 ** attempt)  # Exponential backoff
+                else:
+                    results[entity] = f"Error: HTTP {response.status_code}"
+                    break
+            except Exception as e:
+                logging.error(f"Error during search for {entity}: {e}")
+                results[entity] = "Search error"
     return results
 
 # Process snippets with Groq API
