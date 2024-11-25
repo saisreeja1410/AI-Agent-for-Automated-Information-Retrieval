@@ -123,5 +123,5 @@ Contributions are welcome! To contribute:
 For queries or feedback, reach out:
 
 - Author: Sudhagani Sai Sreeja
-- Email: saisreeja1410@example.com
+- Email: saisreeja1410@gmail.com
 - GitHub: saisreeja1410
